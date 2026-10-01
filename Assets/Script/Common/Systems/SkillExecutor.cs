@@ -48,22 +48,6 @@ public class SkillExecutor
                 ApplyDamage(attacker, defender, skill.Power, ElementType.Grass, logger, left, right);
                 break;
 
-            case SkillType.ThunderMagic:
-                ApplyDamage(attacker, defender, skill.Power, ElementType.Thunder, logger, left, right);
-                break;
-
-            case SkillType.RockMagic:
-                ApplyDamage(attacker, defender, skill.Power, ElementType.Rock, logger, left, right);
-                break;
-
-            case SkillType.DarkMagic:
-                ApplyDamage(attacker, defender, skill.Power, ElementType.Dark, logger, left, right);
-                break;
-
-            case SkillType.LightMagic:
-                ApplyDamage(attacker, defender, skill.Power, ElementType.Light, logger, left, right);
-                break;
-
             case SkillType.Heal:
                 {
                     int before = attacker.CurrentHp;

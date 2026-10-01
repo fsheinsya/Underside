@@ -65,13 +65,13 @@ public class BattleStatusView : MonoBehaviour
     {
         switch (element)
         {
+            //炎を設定をする
             case ElementType.Fire: return "炎";
+            //水を設定をする
             case ElementType.Water: return "水";
+            //草を設定をする
             case ElementType.Grass: return "草";
-            case ElementType.Thunder: return "雷";
-            case ElementType.Rock: return "岩";
-            case ElementType.Dark: return "闇";
-            case ElementType.Light: return "光";
+            //無を設定をする
             default: return "無";
         }
     }
@@ -83,8 +83,11 @@ public class BattleStatusView : MonoBehaviour
     {
         switch (ailment)
         {
+            //行動を不能にする
             case StatusAilmentType.Stun: return "行動不能";
+            //毒を設定をする
             case StatusAilmentType.Poison: return "毒";
+            //封印を設定をする
             case StatusAilmentType.SkillSeal: return "封印";
             default: return "なし";
         }

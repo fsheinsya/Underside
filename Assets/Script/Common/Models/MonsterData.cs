@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// モンスター1体分の情報
+/// スライムの情報
 /// </summary>
 [System.Serializable]
 public class MonsterData

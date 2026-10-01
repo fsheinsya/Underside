@@ -76,11 +76,6 @@ public static class BetOddsCalculator
         if (attacker == ElementType.Water && defender == ElementType.Fire) return 1.15f;
         if (attacker == ElementType.Fire && defender == ElementType.Grass) return 1.15f;
         if (attacker == ElementType.Grass && defender == ElementType.Water) return 1.15f;
-        if (attacker == ElementType.Thunder && defender == ElementType.Rock) return 1.15f;
-        if (attacker == ElementType.Rock && defender == ElementType.Thunder) return 1.15f;
-        if (attacker == ElementType.Dark && defender == ElementType.Light) return 1.25f;
-        if (attacker == ElementType.Light && defender == ElementType.Dark) return 1.25f;
-
         return 1.0f;
     }
 

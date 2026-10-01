@@ -69,7 +69,7 @@ public class MonsterFactory
     /// </summary>
     private ElementType GetRandomElement()
     {
-        int value = Random.Range(0, 7);//無は基本的に起きないように設定
+        int value = Random.Range(0, 2);//無は基本的に起きないように設定
         return (ElementType)value;
     }
 
@@ -198,16 +198,9 @@ public class MonsterFactory
                 return new SkillData { SkillName = "水魔法", SkillType = SkillType.WaterMagic, Power = 10, SuccessRate = 90 };
             case ElementType.Grass:
                 return new SkillData { SkillName = "草魔法", SkillType = SkillType.GrassMagic, Power = 10, SuccessRate = 90 };
-            case ElementType.Thunder:
-                return new SkillData { SkillName = "雷魔法", SkillType = SkillType.ThunderMagic, Power = 10, SuccessRate = 90 };
-            case ElementType.Rock:
-                return new SkillData { SkillName = "岩魔法", SkillType = SkillType.RockMagic, Power = 10, SuccessRate = 90 };
-            case ElementType.Dark:
-                return new SkillData { SkillName = "闇魔法", SkillType = SkillType.DarkMagic, Power = 12, SuccessRate = 85 };
-            case ElementType.Light:
-                return new SkillData { SkillName = "光魔法", SkillType = SkillType.LightMagic, Power = 12, SuccessRate = 85 };
+
             default:
-                return new SkillData { SkillName = "通常攻撃", SkillType = SkillType.NormalAttack, Power = 0, SuccessRate = 100 };
+                return null;
         }
     }
 }

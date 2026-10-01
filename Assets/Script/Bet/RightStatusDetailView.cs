@@ -241,11 +241,6 @@ public class RightStatusDetailView : MonoBehaviour
             ElementType.Fire => "炎",
             ElementType.Water => "水",
             ElementType.Grass => "草",
-            ElementType.Thunder => "雷",
-            ElementType.Rock => "岩",
-            ElementType.Dark => "闇",
-            ElementType.Light => "光",
-            _ => "無"
         };
     }
 

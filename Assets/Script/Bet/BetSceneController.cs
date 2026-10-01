@@ -12,6 +12,7 @@ public class BetSceneController : MonoBehaviour
     [SerializeField] private TMP_Text coinText;
     [SerializeField] private CanvasGroup coinCanvas;
 
+    //左側のキャラクターのUI表示
     [Header("左側UI")]
     [SerializeField] private TMP_Text leftCharaNameText;
     [SerializeField] private Image leftCharaImage;
@@ -19,6 +20,7 @@ public class BetSceneController : MonoBehaviour
     [SerializeField] private Button leftStatusButton;
     [SerializeField] private Button leftSelectButton;
 
+    //右側のキャラクターのUI表示
     [Header("右側UI")]
     [SerializeField] private TMP_Text rightCharaNameText;
     [SerializeField] private Image rightCharaImage;
@@ -26,10 +28,12 @@ public class BetSceneController : MonoBehaviour
     [SerializeField] private Button rightStatusButton;
     [SerializeField] private Button rightSelectButton;
 
+    //UIのルート表示
     [Header("UI Root")]
     [SerializeField] private GameObject selectedUIRoot;
     [SerializeField] private GameObject betAmountRoot;
 
+    //
     [Header("賭け金")]
     [SerializeField] private TMP_Text betAmountText;
 
@@ -50,13 +54,21 @@ public class BetSceneController : MonoBehaviour
     // =========================
     // 🔥 賭け金
     // =========================
+
+    //初期値に10を設定する
     private int currentBetAmount = 10;
+
+    //1を最小値に設定をする
     private const int MIN_BET = 1;
+
+    //1ずつカウントを進める
     private const int BET_STEP = 1;
 
     // =========================
     // 🔥 長押し
     // =========================
+
+    //
     private bool isPressing = false;
     private bool isIncrease = true;
     private CancellationTokenSource cts;
@@ -108,31 +120,41 @@ public class BetSceneController : MonoBehaviour
     // =========================
     private async UniTask PlayIntro()
     {
+        //最初に透明に設定している
         coinCanvas.alpha = 0f;
 
+        //コインキャンパスを0.5秒かけて表示させる
         await coinCanvas.DOFade(1f, 0.5f).AsyncWaitForCompletion();
 
+        //300ミリ秒待機させる
         await UniTask.Delay(300);
 
+        //キャンパスを不透明にする
         leftCharaCanvas.alpha = 1f;
         rightCharaCanvas.alpha = 1f;
 
+        //キャンパスの位置情報を取得する
         RectTransform l = leftCharaImage.rectTransform;
         RectTransform r = rightCharaImage.rectTransform;
 
+        //それぞれのX座標を取得する
         float lx = l.anchoredPosition.x;
         float rx = r.anchoredPosition.x;
 
+        //プレイヤーの位置情報を800に固定する
         float offset = 800f;
 
+        //Vector2(x,y)としてイラストのUIを固定をする
         l.anchoredPosition = new Vector2(-offset, l.anchoredPosition.y);
         r.anchoredPosition = new Vector2(offset, r.anchoredPosition.y);
 
+        //
         await UniTask.WhenAll(
             l.DOAnchorPosX(lx + 80, 0.4f).SetEase(Ease.OutBack).AsyncWaitForCompletion().AsUniTask(),
             r.DOAnchorPosX(rx - 80, 0.4f).SetEase(Ease.OutBack).AsyncWaitForCompletion().AsUniTask()
         );
 
+        //
         await UniTask.WhenAll(
             l.DOAnchorPosX(lx, 0.2f).AsyncWaitForCompletion().AsUniTask(),
             r.DOAnchorPosX(rx, 0.2f).AsyncWaitForCompletion().AsUniTask()
@@ -318,6 +340,7 @@ public class BetSceneController : MonoBehaviour
     private void OpenBetAmountUI() => betAmountRoot?.SetActive(true);
     private void CloseBetAmountUI() => betAmountRoot?.SetActive(false);
 
+    //コインの情報を反映させる
     private void RefreshCoinText()
     {
         coinText.text = $"Coin: {GameSession.Instance.CurrentCoin}";
@@ -325,32 +348,46 @@ public class BetSceneController : MonoBehaviour
 
     private void SetupMonsterViews()
     {
+        //左モンスターの情報を保持している
         var left = GameSession.Instance.LeftMonster;
+
+        //右モンスターの情報を保持している
         var right = GameSession.Instance.RightMonster;
 
+        //左モンスターの名前の情報
         leftCharaNameText.text = left.Name;
+        //左モンスターのアイコン
         leftCharaImage.sprite = left.Icon;
 
+        //右モンスターの名前の情報
         rightCharaNameText.text = right.Name;
+        //右モンスターのアイコンの情報
         rightCharaImage.sprite = right.Icon;
     }
+
 
     // =========================
     // 🎯 選択（SEあり）
     // =========================
+
+    //左を選択をした場合
     public void OnClickLeftSelect()
     {
+        //効果音を再生をする
         PlaySE(selectSE);
 
+        //選択したデータを反映をする
         selectedSide = PredictionSide.Left;
         hasSelectedSide = true;
 
+        //
         UpdateSelectButtonColors();
         SaveBetData();
 
         SceneManager.LoadScene(SceneNames.Battle);
     }
 
+    //右を選択をした場合
     public void OnClickRightSelect()
     {
         PlaySE(selectSE);
@@ -364,6 +401,7 @@ public class BetSceneController : MonoBehaviour
         SceneManager.LoadScene(SceneNames.Battle);
     }
 
+    //アニメーションの更新
     private void UpdateSelectButtonColors()
     {
         if (leftSelectButton == null || rightSelectButton == null) return;

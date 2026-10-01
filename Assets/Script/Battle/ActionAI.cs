@@ -1,19 +1,25 @@
 using UnityEngine;
 
+//性格のパターンのステートメントAI
+
 public class ActionAI
 {
     public SkillData ChooseSkill(MonsterData attacker, MonsterData defender, int turn)
     {
+
         if (attacker.Skills == null || attacker.Skills.Count == 0)
             return CreateNormalAttack();
 
+        //性格の行動パターンの変更
         switch (attacker.Personality)
         {
             case PersonalityType.Bold: // 大胆
                 return GetStrongest(attacker);
 
             case PersonalityType.Calm: // 冷静
+                //2ターン以内の行動
                 if (turn <= 2)
+
                     return GetDefensive(attacker);
                 return GetStrongest(attacker);
 
@@ -44,6 +50,7 @@ public class ActionAI
     // 🔽 ここ全部「既存スキルから選ぶ」
     // =========================
 
+    //ガンガン攻撃を繰り出す
     private SkillData GetStrongest(MonsterData m)
     {
         SkillData best = m.Skills[0];
@@ -53,6 +60,7 @@ public class ActionAI
         return best;
     }
 
+    //弱い
     private SkillData GetWeak(MonsterData m)
     {
         SkillData weak = m.Skills[0];
@@ -62,6 +70,7 @@ public class ActionAI
         return weak;
     }
 
+    //
     private SkillData GetLowSuccess(MonsterData m)
     {
         SkillData risky = m.Skills[0];
@@ -110,6 +119,7 @@ public class ActionAI
             if (s.SkillType == defender.LastUsedSkillType)
                 return s;
         }
+
         return null;
     }
 
