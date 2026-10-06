@@ -107,8 +107,8 @@ public class TitleSceneController : MonoBehaviour
             Debug.LogWarning("GameSessionが存在しません");
         }
 
-        //Betシーンに移動
-        SceneManager.LoadScene(SceneNames.Bet);
+        //Selectシーンに移動
+        SceneManager.LoadScene(SceneNames.Select);
     }
 
 

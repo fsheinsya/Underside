@@ -1,6 +1,8 @@
 using UnityEngine;
 
-//性格のパターンのステートメントAI
+/// <summary>
+/// 性格のパターンのステートメントAI
+/// </summary>
 
 public class ActionAI
 {

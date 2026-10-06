@@ -9,6 +9,8 @@ using UnityEngine;
 /// ・賭け情報の保持
 /// ・試合結果の保持
 /// ・スライム画像のランダム選択
+/// 
+/// ・ランキングモードとストーリーモードによって最大ラウンド数を変更
 /// </summary>
 public class GameSession : MonoBehaviour
 {
@@ -21,10 +23,10 @@ public class GameSession : MonoBehaviour
     public int CurrentCoin { get; private set; } = 100;
 
     // 現在何試合目か
-    public int CurrentRound { get; private set; } = 1;
+    public int CurrentRound { get; private set; }
 
-    // 最大試合数
-    public int MaxRound { get; private set; } = 3;
+    // 最大試合数を設定をする
+    public int MaxRound { get; private set; }
 
     // 現在の左モンスター
     public MonsterData LeftMonster { get; private set; }
@@ -35,11 +37,14 @@ public class GameSession : MonoBehaviour
     // 現在の賭け情報
     public BetData CurrentBet { get; private set; }
 
-    // 直前の試合結果
+    // 直前の試合結果を参照をする
     public MatchResultData CurrentMatchResult { get; private set; }
 
-    // モンスター生成用
+    // モンスター生成用のマスターデータを習得
     private MonsterFactory monsterFactory;
+
+    //現在のモードを取得
+    private ModeType mode;
 
     /// <summary>
     /// 最初に1回だけ生成される
@@ -64,9 +69,19 @@ public class GameSession : MonoBehaviour
     /// </summary>
     public void StartNewGame()
     {
+        //初期所持コインを100に設定
         CurrentCoin = 100;
+        //現在のラウンド数を1に設定
         CurrentRound = 1;
-        MaxRound = 3;
+        //
+        if (mode == ModeType.story)
+        {
+            MaxRound = 3;
+        }
+        else if (mode == ModeType.ranking)
+        {
+            MaxRound = 9999;
+        }
 
         CurrentBet = null;
         CurrentMatchResult = null;

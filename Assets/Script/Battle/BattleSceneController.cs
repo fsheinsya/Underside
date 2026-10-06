@@ -37,8 +37,12 @@ public class BattleSceneController : MonoBehaviour
     [Header("SE,effect")]
     [SerializeField] private AudioSource audio;
     [SerializeField] private BattleEffectPlayer effectPlayer;
+
     // バトル計算本体
     private BattleSimulator battleSimulator;
+
+    //モード毎に処理を変える
+    private ModeType mode;
 
 
     
@@ -142,7 +146,7 @@ public class BattleSceneController : MonoBehaviour
             coinText.text = $"coin:{session.CurrentCoin}";
         }
 
-        // 開始メッセージ
+        // Battleシーンの開始メッセージ
         await actionLogView.ShowMessageAnimated("闇の闘技場、開幕...");
         await UniTask.Delay(700);
 

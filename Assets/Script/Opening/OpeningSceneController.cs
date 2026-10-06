@@ -11,10 +11,8 @@ using System.Threading;
 
 public class OpeningSceneController : MonoBehaviour
 {
-    //テキストを格納する
+    //テキストの設定
     [Header("テキスト")]
-
-    //アニメーションのテキストの設定
     //あらすじ
     [SerializeField] private TextMeshProUGUI outline;
     //あらすじの概要
@@ -44,13 +42,13 @@ public class OpeningSceneController : MonoBehaviour
     // 連打防止をするためにフラグを用意をする
     private bool isTransitioning = false;
 
-    // キャンセル管理
+    // キャンセル管理のトークンを設定
     private CancellationTokenSource cts;
+
+    //タイピングアニメーションの変数を用意する
     private Tween openingTween;
 
-    //
-
-    //　初期値の設定
+    //　初期値の呼び出し
     void Awake()
     {
         cts = new CancellationTokenSource();

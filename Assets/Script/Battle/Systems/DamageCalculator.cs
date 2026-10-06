@@ -19,7 +19,7 @@ public class DamageCalculator
         return Mathf.Max(1, damage);
     }
 
-    //‘®«“¯m‚Ìƒ_ƒ[ƒW‚ğŒvZ‚ğ‚·‚é
+    //‘®«“¯m‚Ìƒ_ƒ[ƒW‚ğŒvZ‚ğ‚·‚é@‘Š«‚ª‚¢‚¢‚Æ‚«‚Í1.5”{‚Ì”{—¦‚ÅŒvZ‚ğ‚·‚é
     private float GetElementMultiplier(ElementType attacker, ElementType defender)
     {
         if (attacker == ElementType.Water && defender == ElementType.Fire) return 1.5f;

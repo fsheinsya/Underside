@@ -111,6 +111,7 @@ public class SkillExecutor
                 }
                 break;
 
+            //ランダムスキル
             case SkillType.RandomSkill:
                 {
                     logger.Add($"{attacker.Name} は祈った…！", left, right);
@@ -136,17 +137,6 @@ public class SkillExecutor
                             GameSession.Instance.AddCoin(20);
                             logger.Add("賭け金が増えた！ +20コイン", left, right);
                         }
-                    }
-                    else if (roll < 75)
-                    {
-                        int coin = Random.Range(10, 100);
-
-                        if (GameSession.Instance != null)
-                        {
-                            GameSession.Instance.AddCoin(coin);
-                        }
-
-                        logger.Add($"賭け金が増えた！ +{coin}コイン！", left, right);
                     }
                     else if (roll < 95)
                     {

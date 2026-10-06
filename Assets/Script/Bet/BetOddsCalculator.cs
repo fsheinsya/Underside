@@ -7,7 +7,7 @@ using UnityEngine;
 public static class BetOddsCalculator
 {
     /// <summary>
-    /// 指定した側に賭けた場合の配当倍率を返す
+    /// ここでBetの計算をする
     /// </summary>
     public static float CalculatePayoutMultiplier(MonsterData left, MonsterData right, PredictionSide selectedSide)
     {
@@ -71,6 +71,10 @@ public static class BetOddsCalculator
     /// <summary>
     /// 属性相性による補正
     /// </summary>
+    /// 
+
+    //余裕があったら改造しよう！
+
     private static float GetElementBonus(ElementType attacker, ElementType defender)
     {
         if (attacker == ElementType.Water && defender == ElementType.Fire) return 1.15f;

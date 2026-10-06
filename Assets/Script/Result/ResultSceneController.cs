@@ -34,6 +34,12 @@ public class ResultSceneController : MonoBehaviour
     // 連打で複数回遷移しないようにするフラグ
     private bool isTransitioning = false;
 
+    //モード別でラウンド数の終了の処理を帰る
+    private ModeType mode;
+
+    //勝敗予想結果のデータを取得する
+    MatchResultData result = GameSession.Instance.CurrentMatchResult;
+
     /// <summary>
     /// シーン開始時に呼ばれる
     /// セッション情報と試合結果をチェックしてUIを反映する
@@ -118,7 +124,6 @@ public class ResultSceneController : MonoBehaviour
     /// </summary>
     private async UniTask PlayResultAnimation()
     {
-        MatchResultData result = GameSession.Instance.CurrentMatchResult;
 
         // プレイヤーの予想が当たったかどうか
         bool isWin = IsPlayerWin(result);
@@ -302,11 +307,26 @@ public class ResultSceneController : MonoBehaviour
         isTransitioning = true;
 
         // 最終ラウンドなら最終結果へ
-        if (GameSession.Instance.IsLastRound()　|| GameSession.Instance.CurrentCoin <= 0)
+        if(mode == ModeType.story)
         {
-            SceneManager.LoadScene(SceneNames.AllResult);
-            return;
+            //ストーリーモード
+            if (GameSession.Instance.IsLastRound() || GameSession.Instance.CurrentCoin <= 0)
+            {
+                SceneManager.LoadScene(SceneNames.AllResult);
+                return;
+            }
         }
+        else if(mode == ModeType.ranking)
+        {
+             //ランキングモード
+             //自分のスライムが負けると結果画面に戻る
+             if(!IsPlayerWin(result))
+            {
+                SceneManager.LoadScene(SceneNames.AllResult);
+                return;
+            }
+        }
+       
 
         // 次ラウンドへ進めて次のBetへ
         GameSession.Instance.NextRound();
