@@ -19,6 +19,16 @@ public class GameSession : MonoBehaviour
     [Header("プレイヤー側・敵側で使うスライム画像一覧")]
     [SerializeField] private Sprite[] slimeSprites;
 
+    // 名前入力画面で選んだ名前を、結果画面まで引き継ぐ。
+    public string RankingPlayerName { get; private set; } = string.Empty;
+
+    // 登録済みの名前を今回のプレイヤー名として保持する。記録の保存は行わない。
+    public void SetRankingPlayerName(string userName)
+    {
+        RankingPlayerName = (userName ?? string.Empty).Trim();
+        Debug.Log($"[Ranking/Session] 今回のプレイヤー名を「{RankingPlayerName}」に設定しました。");
+    }
+
     // 現在の所持コイン
     public int CurrentCoin { get; private set; } = 100;
 
@@ -44,7 +54,7 @@ public class GameSession : MonoBehaviour
     private MonsterFactory monsterFactory;
 
     //現在のモードを取得
-    private ModeType mode;
+    public ModeType mode;
 
     /// <summary>
     /// 最初に1回だけ生成される
@@ -69,6 +79,9 @@ public class GameSession : MonoBehaviour
     /// </summary>
     public void StartNewGame()
     {
+        // 新しいプレイに前回の名前を持ち越さない。名前入力画面で改めて設定する。
+        RankingPlayerName = string.Empty;
+
         //初期所持コインを100に設定
         CurrentCoin = 100;
         //現在のラウンド数を1に設定

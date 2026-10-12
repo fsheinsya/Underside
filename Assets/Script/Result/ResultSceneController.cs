@@ -34,17 +34,14 @@ public class ResultSceneController : MonoBehaviour
     // 連打で複数回遷移しないようにするフラグ
     private bool isTransitioning = false;
 
-    //モード別でラウンド数の終了の処理を帰る
-    private ModeType mode;
-
     //勝敗予想結果のデータを取得する
-    MatchResultData result = GameSession.Instance.CurrentMatchResult;
+    private MatchResultData result;
 
     /// <summary>
     /// シーン開始時に呼ばれる
     /// セッション情報と試合結果をチェックしてUIを反映する
     /// </summary>
-    private void Start()
+    private void Awake()
     {
         // GameSession または試合結果が無いなら Title に戻す
         if (GameSession.Instance == null ||
@@ -53,6 +50,8 @@ public class ResultSceneController : MonoBehaviour
             SceneManager.LoadScene(SceneNames.Title);
             return;
         }
+
+        result = GameSession.Instance.CurrentMatchResult;
 
         // 結果画面の基本表示をセット
         SetupResultView();
@@ -306,25 +305,33 @@ public class ResultSceneController : MonoBehaviour
         // 多重遷移防止
         isTransitioning = true;
 
-        // 最終ラウンドなら最終結果へ
+        var mode = GameSession.Instance.mode;
+
+        var session = GameSession.Instance;
+
+        //試合の終了の判定
+        bool moveAllResult = false;
+
+        // ゲームのモードによって遷移結果を変える
+
+        //ストーリーモードでの処理
         if(mode == ModeType.story)
         {
-            //ストーリーモード
-            if (GameSession.Instance.IsLastRound() || GameSession.Instance.CurrentCoin <= 0)
-            {
-                SceneManager.LoadScene(SceneNames.AllResult);
-                return;
-            }
+            // ストーリー：最終ラウンド、またはコイン切れで終了
+            moveAllResult = session.IsLastRound() || session.CurrentCoin <= 0;
         }
+        //ランキングモードでの処理
         else if(mode == ModeType.ranking)
         {
-             //ランキングモード
-             //自分のスライムが負けると結果画面に戻る
-             if(!IsPlayerWin(result))
-            {
-                SceneManager.LoadScene(SceneNames.AllResult);
-                return;
-            }
+            // ランキング：予想を外したら終了
+            moveAllResult = !IsPlayerWin(result);
+        }
+
+        //moveAllResult実行時
+        if (moveAllResult)
+        {
+            SceneManager.LoadScene(SceneNames.AllResult);
+            return;
         }
        
 

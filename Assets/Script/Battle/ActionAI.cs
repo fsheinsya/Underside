@@ -82,6 +82,7 @@ public class ActionAI
         return risky;
     }
 
+
     private SkillData GetDefensive(MonsterData m)
     {
         foreach (var s in m.Skills)
@@ -114,6 +115,8 @@ public class ActionAI
     // 🔥 柔軟AI用（相手のタイプをコピー）
     private SkillData FindSameType(MonsterData attacker, MonsterData defender)
     {
+        //スキルが無の時はnullを返す
+
         if (defender.LastUsedSkillType == SkillType.None) return null;
 
         foreach (var s in attacker.Skills)

@@ -22,6 +22,8 @@ public class SelectSceneController: MonoBehaviour
     [SerializeField] private CanvasGroup RankButton;
     //タイトルに戻るボタン
     [SerializeField] private CanvasGroup ReturnButton;
+    //ランキングへ遷移をするボタン
+    [SerializeField] private CanvasGroup RankViewButton;
 
     [Header("ポジション")]
     //ストーリーのボタンの座標を保存
@@ -30,6 +32,8 @@ public class SelectSceneController: MonoBehaviour
     [SerializeField] private RectTransform RankBtnPos;
     //テキストの座標を保存
     [SerializeField] private RectTransform explanTxtPos;
+    //ランキング表示画面への遷移
+    [SerializeField] private RectTransform ViewBtnPos;
 
     //モードの初期値の設定
     private ModeType mode;
@@ -43,9 +47,12 @@ public class SelectSceneController: MonoBehaviour
         cts = new CancellationTokenSource();
 
         StoryBtnPos.anchoredPosition = new Vector2(-570f,50f);
-        RankBtnPos.anchoredPosition = new Vector2(-570f,-100f);
+        RankBtnPos.anchoredPosition = new Vector2(-570f,-80f);
         explanTxtPos.anchoredPosition = new Vector2(145f,60f);
+        ViewBtnPos.anchoredPosition = new Vector2(-190f, -190f);
+
         ReturnButton.alpha = 0f;
+        RankViewButton.alpha = 0f;
 
         SelectUIAnim(cts.Token).Forget();
     }
@@ -63,13 +70,13 @@ public class SelectSceneController: MonoBehaviour
     //ストーリーボタンに触れる
     public void StoryExplantion()
     {
-        explan.text = $"あなたは通りすがりの村人だ！\n果たして裏世界の王になれるのか,,,";
+        explan.text = $"3回マッチして裏社会の王を目指そう！";
     }
 
     //ランキングボタンに触れる
     public void RankingExplantion()
     {
-        explan.text = $"世界中の賭博者と競い合おう！\n負けるまで終わらない激熱マッチ！！！";
+        explan.text = $"負けるまで終わらない激熱マッチ！！！";
     }
 
 
@@ -87,26 +94,39 @@ public class SelectSceneController: MonoBehaviour
         return;
     }
 
-    //ストーリーモード
+    //Reserveに移行する
+    void MoveReserveScene()
+    {
+        SceneManager.LoadScene(SceneNames.Reserve);
+        return;
+    }
+
+    //ストーリーモードを選択を場合
     public void SelectStory()
     {
-        //ストーリーモードの設定に変更する
-        mode = ModeType.story;
-        Debug.Log(mode);
-        //賭けるシーンに移行
+        //セッションからストーリーモードを選択する
+        GameSession.Instance.mode = ModeType.story;
+        //ゲームをスタートをする
+        GameSession.Instance.StartNewGame();
+        //Betシーンに移行
         MoveBetScene();
     }
 
-    //ランキングモード
+    //ランキングモードの選択をした場合
     public void SelectRanking()
     {
-        //ランキングモードの設定に変更する
-        mode = ModeType.ranking;
-        Debug.Log(mode);
-        //賭けるシーンに移行
-        MoveBetScene();
+        //セッションからランキングモードを選択する
+        GameSession.Instance.mode = ModeType.ranking;
+        //ゲームをスタートをする
+        GameSession.Instance.StartNewGame();
+        //Reserveシーンに移行
+        MoveReserveScene();
     }
 
+    public void SelectRankingView()
+    {
+        SceneManager.LoadScene(SceneNames.Ranking);
+    }
 
     //セレクトシーンのアニメーションの管理
     public async UniTask SelectUIAnim(CancellationToken token)
@@ -114,14 +134,23 @@ public class SelectSceneController: MonoBehaviour
         try
         {
 
-            //ストーリーモード出現
+            //ストーリーモードのボタンをスライドで出現
             await StoryBtnPos.DOAnchorPos(new Vector2(-190f,50f),1.0f).AsyncWaitForCompletion();
-            //ランキングモード出現
+            //ランキングモードのボタンをスライドで出現
             await RankBtnPos.DOAnchorPos(new Vector2(-190f,-100f), 1.0f).AsyncWaitForCompletion();
-            //タイトルに戻るはフェードイン
-            await ReturnButton.DOFade(1.0f, 1.0f).AsyncWaitForCompletion();
+            //タイトルに戻るとランキング表示画面はフェードイン
+            await UniTask.WhenAll(
+            //タイトルに戻るボタン
+             ReturnButton.DOFade(1f, 1f).ToUniTask(
+                    tweenCancelBehaviour: TweenCancelBehaviour.KillAndCancelAwait,
+                    cancellationToken: token),
+             //ランキングを見るボタン
+             RankViewButton.DOFade(1f, 1f).ToUniTask(
+                    tweenCancelBehaviour: TweenCancelBehaviour.KillAndCancelAwait,
+                    cancellationToken: token)
+             );
             //画面をクリックでアニメーションスキップ
-            
+
         }
         catch (OperationCanceledException)
         {
