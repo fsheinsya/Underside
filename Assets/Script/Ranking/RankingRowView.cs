@@ -1,6 +1,10 @@
 using UnityEngine;
 using TMPro;
 
+/// <summary>
+/// ランキングの1行分を表示する担当。順位の計算や保存は行わない。
+/// RankingSceneControllerから渡された番号と成績を、Prefab内のテキストへ反映する。
+/// </summary>
 public class RankingRowView : MonoBehaviour
 {
     //ランキングシーン

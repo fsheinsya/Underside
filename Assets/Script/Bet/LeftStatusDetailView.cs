@@ -250,7 +250,7 @@ public class LeftStatusDetailView : MonoBehaviour
         {
             PersonalityType.Bold => "大胆",
             PersonalityType.Calm => "冷静",
-            PersonalityType.Flexible => "柔軟",
+            PersonalityType.faith => "信仰",
             PersonalityType.Taunt => "挑発",
             PersonalityType.Aggressive => "積極的",
             PersonalityType.Timid => "臆病",

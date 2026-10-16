@@ -44,9 +44,6 @@ public class BattleSceneController : MonoBehaviour
     //モード毎に処理を変える
     private ModeType mode;
 
-
-    
-
     /// <summary>
     /// シーン開始時に呼ばれる
     /// </summary>

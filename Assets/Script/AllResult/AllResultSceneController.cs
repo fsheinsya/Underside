@@ -7,14 +7,22 @@ using UnityEngine.UI;
 using System.Text;
 
 /// <summary>
-/// 
+/// プレイ全体の最終成績を表示し、ランキングモードでは記録更新の確認を行う。
+/// 名前はReserveからGameSession経由で受け取り、この画面に入った時点の成績と一緒に保持する。
+/// 「更新する」でRankingService.Submitを呼び、「更新しない」やタイトルへ戻る操作では保存しない。
+/// 自己ベストの比較・保存はServiceに任せ、この画面は演出・選択受付・上位5人の表示を担当する。
 /// </summary>
 
 public class AllResultSceneController : MonoBehaviour
 {
     [Header("最終結果表示UI")]
+    //最終表示コイン
     [SerializeField] private TMP_Text finalCoinText;
+    //エンディング文
     [SerializeField] private TMP_Text endingText;
+    //タップして案内に戻るの案内文を表示する
+    [SerializeField] private TMP_Text announceText;
+　　
 
     //アニメーションの設定
     private bool isAnimating = false;
@@ -29,7 +37,7 @@ public class AllResultSceneController : MonoBehaviour
     private TMP_Text rankingText;
     private bool hasRankingDecision;
 
-    private async void Start()
+    private async void Awake()
     {
         // ゲームセッションが空だったら
         if (GameSession.Instance == null)
@@ -45,6 +53,11 @@ public class AllResultSceneController : MonoBehaviour
         finalRound = GameSession.Instance.CurrentRound;
         rankingPlayerName = GameSession.Instance.RankingPlayerName;
 
+        //テキストは最初は0に設定する
+        endingText.alpha = 0;
+        announceText.alpha = 0;
+
+        //ランキングモードの場合UIを表示させる
         if (currentMode == ModeType.ranking)
         {
             Debug.Log($"[Ranking/Result] 名前「{rankingPlayerName}」: 所持コイン={finalCoin}, 到達ラウンド={finalRound}。更新の選択を待ちます。", this);
@@ -77,7 +90,7 @@ public class AllResultSceneController : MonoBehaviour
     }
 
     /// <summary>
-    /// 結果演出メイン
+    /// アニメーションの演出
     /// </summary>
     private async UniTask PlayResultAnimation()
     {
@@ -153,16 +166,23 @@ public class AllResultSceneController : MonoBehaviour
         //-------------------------
         // ④ フェードイン（追加演出）
         //-------------------------
-        endingText.alpha = 0;
-        //0.5秒かけてテキストを表示させる
+       
+        //0.5秒かけてエンディング文を表示させる
         await endingText.DOFade(1f, 0.5f)
-            .AsyncWaitForCompletion(); 
+            .AsyncWaitForCompletion();
+
+        //0.5秒かけてクリックして画面に戻るように指示をする
+        await announceText.DOFade(1f, 0.5f)
+            .AsyncWaitForCompletion();
 
         //表示させたらフラグをfalseにする
         isAnimating = false;
     }
 
-    //
+    /// <summary>
+    /// 「更新する」ボタンの処理。最終成績を提出し、正常に受け付けられたら選択を確定する。
+    /// Submitがtrueでも自己ベスト更新とは限らないため、Serviceが返した説明を表示する。
+    /// </summary>
     private void SubmitRanking()
     {
         if (hasRankingDecision || isAnimating) return;
@@ -233,6 +253,7 @@ public class AllResultSceneController : MonoBehaviour
         if (!hasRankingDecision) DeclineRanking();
         SceneManager.LoadScene(SceneNames.Title);
     }
+    // 表示用リストだけを上位5人に絞る。保存済みの6位以下の記録を削除する処理ではない。
     private void RefreshRanking()
     {
         System.Collections.Generic.List<RankingData> entries;

@@ -4,6 +4,12 @@ using UnityEngine;
 using UnityEngine.UI; // ScrollRectとレイアウト更新に使用する。
 using TMPro; // 管理者コードの入力欄に使用する。
 
+/// <summary>
+/// 保存済みランキングを全件表示する画面。並べ替えはRankingServiceへ任せる。
+/// 返された一覧の順にRankingRowViewを生成し、表示番号を1から付ける。
+/// 同じ成績でも同順位にはせず、名前順に並んだ行へ連番を表示する。
+/// AllResultの上位5人表示とは異なり、この画面では全員をスクロール表示する。
+/// </summary>
 public class RankingSceneController : MonoBehaviour
 {
     [Header("ランキング表示")]

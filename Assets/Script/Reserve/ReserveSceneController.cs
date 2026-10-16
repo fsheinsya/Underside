@@ -3,6 +3,11 @@ using UnityEngine.UI;
 using UnityEngine.SceneManagement;
 using TMPro;
 
+/// <summary>
+/// ランキング挑戦前に、今回使うプレイヤー名を確定する画面。
+/// 未登録名はRankingService.TryRegisterで保存し、登録済みの名前はそのまま使用する。
+/// 名前はGameSessionへ引き継ぎ、Betへ進む。成績の保存はプレイ後のAllResultが担当する。
+/// </summary>
 public class ReserveSceneController : MonoBehaviour
 {
     [Header("ユーザー")]
@@ -70,6 +75,10 @@ public class ReserveSceneController : MonoBehaviour
         SceneManager.LoadScene(SceneNames.Select);
     }
 
+    /// <summary>
+    /// 登録ボタンの入口。準備確認、名前の登録・再利用、名前の引き継ぎ、画面移動の順に処理する。
+    /// 読み書きに失敗した場合は画面に理由を表示し、もう一度操作できるようにする。
+    /// </summary>
     public void OnClickRegister()
     {
         if (isStartingGame) return;

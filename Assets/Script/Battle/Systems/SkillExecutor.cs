@@ -86,7 +86,7 @@ public class SkillExecutor
 
             case SkillType.PoisonDebuff:
                 defender.StatusAilment = StatusAilmentType.Poison;
-                logger.Add($"{defender.Name} は毒状態！", left, right);
+                logger.AddStatusApplied($"{defender.Name} は毒状態！", defender, left, right);
                 break;
 
             case SkillType.SkillSealDebuff:
@@ -99,16 +99,10 @@ public class SkillExecutor
                 logger.Add($"{defender.Name} の防御力DOWN！", left, right);
                 break;
 
-            case SkillType.InstantDeath:
-                if (Random.Range(0, 100) < 15)
-                {
-                    defender.CurrentHp = 0;
-                    logger.Add($"{defender.Name} は即死した！！", left, right);
-                }
-                else
-                {
-                    logger.Add("しかし効かなかった…", left, right);
-                }
+            //15%の内部抽選の取り消し
+            case SkillType.InstantDeath:              
+                 defender.CurrentHp = 0;
+                 logger.Add($"{defender.Name} は即死した！！", left, right);
                 break;
 
             //ランダムスキル
@@ -131,12 +125,7 @@ public class SkillExecutor
                     {
                         logger.Add("奇跡が起きた！", left, right);
                         Execute(attacker, defender, randomSkill, logger, left, right);
-
-                        if (GameSession.Instance != null)
-                        {
-                            GameSession.Instance.AddCoin(20);
-                            logger.Add("賭け金が増えた！ +20コイン", left, right);
-                        }
+                        //コインが増える謎仕様の削除
                     }
                     else if (roll < 95)
                     {

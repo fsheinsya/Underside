@@ -1,10 +1,19 @@
 using UnityEngine;
 
+/// <summary>
+/// ランキング全体をJSON文字列にして、PlayerPrefsでこの端末に保存・読み込みする。
+/// 順位や自己ベストの条件はRankingServiceが担当し、このクラスは保存方法だけを扱う。
+/// ゲーム中だけ情報を持つGameSessionと異なり、保存した記録はアプリ終了後も残る。
+/// </summary>
 public static class RankingStore
 {
-    //ランキングデータの識別キー
+    // 全員分の名前・成績をまとめたJSONの保存キー。ユーザーごとのキーではない。
     private const string SaveKey = "v1";
 
+    /// <summary>
+    /// 保存済みJSONをデータへ戻す。初回など、キー自体がなければ空の一覧を返す。
+    /// 壊れたJSONや不正な一覧は例外で知らせ、正常な空データとは区別する。
+    /// </summary>
     public static RankingDataList Load()
     {
         //ユーザーデータが空だったら、空のデータを返す
@@ -31,6 +40,10 @@ public static class RankingStore
         return data;
     }
 
+    /// <summary>
+    /// 渡された一覧全体で保存内容を置き換える。1人分の追記処理ではない。
+    /// ServiceがLoadした一覧を更新してから渡すことで、ほかの人の登録も残す。
+    /// </summary>
     public static void Save(RankingDataList data)
     {
         //jsonデータに変換

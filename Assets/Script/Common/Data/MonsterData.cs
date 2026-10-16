@@ -25,10 +25,10 @@ public class MonsterData
 
     // 追加パラメータ
     public ElementType Element;
-    public PersonalityType Personality;
+    public PersonalityType Personality; // ActionAI が行動を選ぶときの性格。MonsterFactory はこの性格に応じた所持スキルも生成する。
     public StatusAilmentType StatusAilment;
 
-    // スキル一覧
+    // スキル一覧。ActionAI は原則ここから選び、威力・成功率が同値の場合や種別検索では一覧の順番を優先する。
     public List<SkillData> Skills = new List<SkillData>();
 
     // 戦闘中一時補正
@@ -39,11 +39,11 @@ public class MonsterData
     // 現在行動不能か
     public bool IsStunnedThisTurn;
 
-    public ActionType? LastAction; // 柔軟AI用
+    public ActionType? LastAction; // 現在の信仰AIはこの値を使わず、下の LastUsedSkillType を参照する。
     public int BetCoin;            // ギャンブル用
 
-    // 🔥 追加（ここが重要）
-    public SkillType LastUsedSkillType = SkillType.None;
+    // 本人が直近に選んだスキル種別。相手の信仰AIがまねする種別として参照し、失敗・封印時も記録される。
+    public SkillType LastUsedSkillType = SkillType.None; // 生成直後の None は行動履歴なしを表し、ActionAI.RecordAction が更新する。
 
     /// <summary>
     /// 実際に戦闘で使う攻撃力
