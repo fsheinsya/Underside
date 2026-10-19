@@ -8,13 +8,10 @@ public class BattleEffectPlayer : MonoBehaviour
 
     public async UniTask Play(BattleLogEntry log)
     {
-        // 戦闘終了後の状態ではなく、このログで毒が付与されたかを確認する。
-        // 結果ログは IsAction が false なので、行動ログの判定より先に処理する。
-        if (log.AppliedStatus == StatusAilmentType.Poison)
-        {
-            BattleCharacterView target = log.IsLeftTarget ? leftView : rightView;
-            target.ApplyPoison();
-        }
+        // 全ログで左右の状態を反映する。付与時は状態色を保ち、解除されたログでは元の色へ戻す。
+        // 戦闘は先に最後まで計算されるため、現在のMonsterDataではなく保存済みの状態を使う。
+        leftView.SetStatus(log.LeftStatus, log.LeftSkillLocked);
+        rightView.SetStatus(log.RightStatus, log.RightSkillLocked);
 
         if (!log.IsAction) return;
         if (!log.PlayMotion) return;
@@ -26,6 +23,12 @@ public class BattleEffectPlayer : MonoBehaviour
         {
             case SkillType.NormalAttack:
             case SkillType.StrongAttack:
+            case SkillType.FireMagic:
+            case SkillType.WaterMagic:
+            case SkillType.GrassMagic:
+            case SkillType.LightMagic:
+            case SkillType.DarkMagic:
+            case SkillType.AllOutAttack:
                 await attacker.PlayAttack();
                 await defender.PlayHit();
                 break;

@@ -105,14 +105,16 @@ public class GameSession : MonoBehaviour
     /// <summary>
     /// 新しい対戦カードを生成する
     /// 毎回スライム画像をランダムで選ぶ
+    /// StartNewGameとNextRoundの両方がここを通り、現在のmodeで出現候補を決める。
     /// </summary>
     public void GenerateNewMatch()
     {
         // スライム画像が未設定なら、nullで生成する
         if (slimeSprites == null || slimeSprites.Length == 0)
         {
-            LeftMonster = monsterFactory.CreateRandom("Left Slime", null);
-            RightMonster = monsterFactory.CreateRandom("Right Slime", null);
+            // 画像がなくてもmodeを渡すことで、ランキング専用の属性・性格の制限を適用する。
+            LeftMonster = monsterFactory.CreateRandom("Left Slime", mode);
+            RightMonster = monsterFactory.CreateRandom("Right Slime", mode);
 
             CurrentBet = null;
             CurrentMatchResult = null;
@@ -124,8 +126,9 @@ public class GameSession : MonoBehaviour
         Sprite rightSprite = GetRandomDifferentSlimeSprite(leftSprite);
 
         // 名前も色っぽく変えたいなら sprite.name を使う
-        LeftMonster = monsterFactory.CreateRandom(GetMonsterNameFromSprite(leftSprite), leftSprite);
-        RightMonster = monsterFactory.CreateRandom(GetMonsterNameFromSprite(rightSprite), rightSprite);
+        // 見た目は共通の画像一覧から選び、属性・性格は左右とも選択中のモードに従って生成する。
+        LeftMonster = monsterFactory.CreateRandom(GetMonsterNameFromSprite(leftSprite), mode, leftSprite);
+        RightMonster = monsterFactory.CreateRandom(GetMonsterNameFromSprite(rightSprite), mode, rightSprite);
 
         CurrentBet = null;
         CurrentMatchResult = null;
@@ -204,7 +207,8 @@ public class GameSession : MonoBehaviour
     public void AddCoin(int amount)
     {
         if (amount < 0) return;
-        CurrentCoin += amount;
+        // 高倍率の配当を受け取った場合も所持コインを整数の上限内に収める。
+        CurrentCoin = (int)System.Math.Min(int.MaxValue, (long)CurrentCoin + amount);
     }
 
     /// <summary>
@@ -213,6 +217,9 @@ public class GameSession : MonoBehaviour
     public void SetMatchResult(MatchResultData result)
     {
         CurrentMatchResult = result;
+        // 摘発では配当を支払わず、エンディングの表示と所持コインを0に揃える。
+        if (mode == ModeType.story && result != null && result.IsKingdomRaidEnding)
+            CurrentCoin = 0;
     }
 
     /// <summary>

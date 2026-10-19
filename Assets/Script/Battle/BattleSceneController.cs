@@ -151,7 +151,8 @@ public class BattleSceneController : MonoBehaviour
         MatchResultData result = battleSimulator.Simulate(
             session.LeftMonster,
             session.RightMonster,
-            session.CurrentBet
+            session.CurrentBet,
+            session.mode
         );
 
         // ログ1件ずつ表示して、その時点のHPも反映
@@ -165,12 +166,28 @@ public class BattleSceneController : MonoBehaviour
             }
 
             if (leftStatusView != null)
+            {
                 leftStatusView.SetHp(log.LeftHp);
+                leftStatusView.SetStatus(log.LeftStatus, log.LeftSkillLocked); // 色と状態欄を同じログの状態に揃える。
+            }
 
             if (rightStatusView != null)
+            {
                 rightStatusView.SetHp(log.RightHp);
+                rightStatusView.SetStatus(log.RightStatus, log.RightSkillLocked);
+            }
 
             await UniTask.Delay(500);
+        }
+
+        // 摘発は勝敗演出を挟まず、所持コインを没収して隠しエンディングへ進む。
+        session.SetMatchResult(result);
+        if (result.IsKingdomRaidEnding)
+        {
+            if (coinText != null) coinText.text = "coin:0";
+            await UniTask.Delay(1000);
+            SceneManager.LoadScene(SceneNames.AllResult);
+            return;
         }
 
         // 的中時はコイン加算
@@ -189,9 +206,6 @@ public class BattleSceneController : MonoBehaviour
         {
             await actionLogView.ShowMessageAnimated("予想失敗……掛け金は没収された。");
         }
-
-        // 結果保存
-        session.SetMatchResult(result);
 
         // 少し待ってからResultへ
         await UniTask.Delay(1000);

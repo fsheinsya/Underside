@@ -165,7 +165,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::AllResultSceneController
   finalCoinText: {fileID: 199916098}
   endingText: {fileID: 750492569}
-  announceText: {fileID: 0}
+  announceText: {fileID: 35090186}
 --- !u!1 &35090184
 GameObject:
   m_ObjectHideFlags: 0

@@ -70,13 +70,13 @@ public class SelectSceneController: MonoBehaviour
     //ストーリーボタンに触れる
     public void StoryExplantion()
     {
-        explan.text = $"3回マッチして裏社会の王を目指そう！";
+        explan.text = $"3回マッチして\n裏社会の王を目指そう！";
     }
 
     //ランキングボタンに触れる
     public void RankingExplantion()
     {
-        explan.text = $"負けるまで終わらない激熱マッチ！！！";
+        explan.text = $"負けるまで終わらない激熱マッチ！！！\n他の賭博者と競い合おう！";
     }
 
 

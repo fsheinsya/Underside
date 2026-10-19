@@ -1,26 +1,10 @@
 using Cysharp.Threading.Tasks;
-using DG.Tweening;
-using UnityEngine;
 
-
-//<summery>
-//‰E‚ÌƒLƒƒƒ‰‚ÌƒAƒjƒ[ƒVƒ‡ƒ“‚ğ•\Œ»‚ğ‚·‚é
-//</summery>
+// å³å´ã¯ç›¸æ‰‹ã®ã„ã‚‹å·¦æ–¹å‘ã¸é€²ã‚€ã€‚å·¦å³ã§å¤‰ãˆã‚‹ã®ã¯ç§»å‹•æ–¹å‘ã ã‘ã€‚
 public class RightCharacterView : BattleCharacterView
 {
-    public override async UniTask PlayAttack()
+    public override UniTask PlayAttack()
     {
-        //attack‚ÌSE‚ÌŒø‰Ê‰¹‚ğ–Â‚ç‚·
-        PlaySE(attackSE);
-
-        //‚¿‚å‚Á‚Æ‚¾‚¯¶‚É“®‚©‚·
-        await rect.DOAnchorPos(originalPos + new Vector2(-120f, 0), 0.15f)
-            .SetEase(Ease.OutQuad)
-            .AsyncWaitForCompletion();
-
-        //Œ³‚ÌˆÊ’u‚É–ß‚·
-        await rect.DOAnchorPos(originalPos, 0.2f)
-            .SetEase(Ease.OutBack)
-            .AsyncWaitForCompletion();
+        return PlayAttackTowards(-1f); // Canvasåº§æ¨™ã®å·¦æ–¹å‘ã¸ã€å…±é€šã®æ”»æ’ƒãƒ¢ãƒ¼ã‚·ãƒ§ãƒ³ã‚’å†ç”Ÿã™ã‚‹ã€‚
     }
 }

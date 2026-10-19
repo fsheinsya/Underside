@@ -3,14 +3,17 @@ using UnityEngine;
 
 /// <summary>
 /// モンスター生成クラス
-/// 第2引数で渡された画像を、そのままモンスター画像として使う
+/// モードに対応した候補から生成し、渡された画像をモンスター画像として使う。
 /// </summary>
 public class MonsterFactory
 {
     /// <summary>
     /// ランダムなモンスターを1体作る
     /// </summary>
-    public MonsterData CreateRandom(string monsterName, Sprite icon = null)
+    /// <param name="monsterName">画面に表示するモンスター名。</param>
+    /// <param name="mode">Selectで選択したモード。出現候補の制限に使うため省略できない。</param>
+    /// <param name="icon">表示する画像。未設定の場合も属性・性格の抽選ルールは同じ。</param>
+    public MonsterData CreateRandom(string monsterName, ModeType mode, Sprite icon = null)
     {
         // 基本能力値をランダム生成する
         int hp = Random.Range(45, 91);
@@ -23,8 +26,9 @@ public class MonsterFactory
         int critical = Random.Range(5, 21);
 
         // 属性、性格、特殊能力をランダム決定する
-        ElementType element = GetRandomElement(); // 属性スキルと通常・強攻撃の属性に使う属性を抽選する。
-        PersonalityType personality = GetRandomPersonality(); // 所持スキルの組み合わせと戦闘中の選び方を決める性格を抽選する。
+        // モードによる出現制限はMonsterSpawnRulesにまとめる。能力値と特殊能力は両モード共通。
+        ElementType element = MonsterSpawnRules.GetRandomElement(mode);
+        PersonalityType personality = MonsterSpawnRules.GetRandomPersonality(mode);
         SpecialAbilityType specialAbility = GetRandomSpecialAbility();
 
         // 性格に対応した所持スキルを2つ作る。AIは原則としてこのリストから行動を選ぶ。
@@ -65,24 +69,6 @@ public class MonsterFactory
     }
 
     /// <summary>
-    /// 属性をランダムに決める
-    /// </summary>
-    private ElementType GetRandomElement()
-    {
-        int value = Random.Range(0, 2); // 整数の上限2は含まないため、現状はFire(0)かWater(1)だけを抽選し、Grass(2)は出ない。
-        return (ElementType)value; // 抽選した整数を属性の列挙値へ変換する。
-    }
-
-    /// <summary>
-    /// 6種類の性格を同じ確率で抽選する。性格未設定に相当する列挙値はない。
-    /// </summary>
-    private PersonalityType GetRandomPersonality() // 新しいモンスターの性格を1つ決める。
-    {
-        int value = Random.Range(0, 6); // 整数の上限6は含まないため、0～5の6通りを等確率で選ぶ。
-        return (PersonalityType)value; // 列挙順に、大胆・冷静・信仰・挑発・挑戦・臆病のいずれかに変換する。
-    }
-
-    /// <summary>
     /// 特殊能力をランダムに決める
     /// </summary>
     private SpecialAbilityType GetRandomSpecialAbility()
@@ -93,46 +79,126 @@ public class MonsterFactory
 
     /// <summary>
     /// 性格に応じて所持スキルを作る。indexが0なら1つ目、0以外なら2つ目のスキルを返す。
-    /// PowerはAIの大小比較にも使う共通値で、攻撃ならダメージ計算への加算値、回復なら回復量になる。
+    /// PowerはAIの大小比較にも使う共通値で、物理攻撃ならダメージ計算への加算値、回復なら回復量になる。属性魔法ではAI比較だけに使う。
     /// SuccessRateはSkillExecutorが効果の実行前に行う成功判定の百分率で、能力値のAccuracy（命中率）とは別。
     /// </summary>
     private SkillData CreateSkillByPersonality(PersonalityType personality, ElementType element, int index) // 性格・属性・スキルの位置から設定を作る。
     {
-        SkillData normalAttack = new SkillData // 大胆・信仰・既定分岐で使う通常攻撃を用意する。
-        {
-            SkillName = "通常攻撃", // 行動ログなどに表示する名前。
-            SkillType = SkillType.NormalAttack, // 使用者の属性で相手にダメージを与える処理を指定する。
-            Power = 0, // ダメージ計算への追加値は0。基本攻撃力などによるダメージは発生する。
-            SuccessRate = 100 // 実行前の成功判定は必ず通るが、スキル封印などの制限は別に受ける。
-        };
+        SkillData normalAttack = CreateNormalAttack(); // 生成時も、AIが代わりに攻撃するときも同じ通常攻撃の定義を使う。
 
-        SkillData elementSkill = CreateElementSkill(element); // 属性魔法を用意する。実際に返すのは冷静の2つ目か既定分岐の2つ目だけ。
+        SkillData elementSkill = CreateElementSkill(element); // 冷静・執念など、性格ごとの分岐で所持技として返す属性魔法を用意する。
 
         switch (personality) // 抽選した性格に対応する2つの所持スキルを振り分ける。
         {
-            case PersonalityType.Bold: // 大胆：通常攻撃と強撃。AIはPower最大の強撃を選ぶ。
-                return index == 0 ? normalAttack : new SkillData // 1つ目は通常攻撃、2つ目は以下の強撃を返す。
+            case PersonalityType.Delusional: // 中二：2つ目は実行時に効果が発生しない技。
+                if (index == 0) return normalAttack;
+                return new SkillData
                 {
-                    SkillName = "強撃", // 強攻撃の表示名。
-                    SkillType = SkillType.StrongAttack, // 使用者の属性でダメージを与える強攻撃として実行する。
-                    Power = 12, // ダメージ計算への加算値を12にし、Power=0の通常攻撃よりAIに優先させる。
-                    SuccessRate = 65 // 効果の実行前に65%で成功し、失敗するとダメージ処理に進まない。
+                    SkillName = "超絶滅亡王漆黒波",
+                    SkillType = SkillType.Delusion,
+                    Power = 0,
+                    SuccessRate = 100
                 };
+            case PersonalityType.Inept: // 無能：覚醒後に選べる強攻撃を2つ目に持たせる。
+                if (index == 0) return normalAttack;
+                return new SkillData
+                {
+                    SkillName = "???",
+                    SkillType = SkillType.StrongAttack,
+                    Power = 20,
+                    SuccessRate = 100
+                };
+            case PersonalityType.Stoic:
+            case PersonalityType.Adversity:
+            case PersonalityType.Unyielding:
+            case PersonalityType.Obsessive:
+                return index == 0 ? normalAttack : elementSkill;
+            case PersonalityType.Explorer: // 探求：2つ目は発掘の抽選処理へ進む技。
+                if (index == 0) return normalAttack;
+                return new SkillData
+                {
+                    SkillName = "発掘",
+                    SkillType = SkillType.Dig,
+                    Power = 0,
+                    SuccessRate = 100
+                };
+            case PersonalityType.Devoted: // 献身：2つ目は現在HPを使う全力攻撃。
+                if (index == 0) return normalAttack;
+                return new SkillData
+                {
+                    SkillName = "全身全霊",
+                    SkillType = SkillType.AllOutAttack,
+                    Power = 0,
+                    SuccessRate = 100
+                };
+            case PersonalityType.Impatient: // 短気：我慢と強攻撃をそれぞれ作る。
+                if (index == 0)
+                {
+                    return new SkillData
+                    {
+                        SkillName = "我慢",
+                        SkillType = SkillType.Wait,
+                        Power = 0,
+                        SuccessRate = 100
+                    };
+                }
+                return new SkillData
+                {
+                    SkillName = "我慢の限界",
+                    SkillType = SkillType.StrongAttack,
+                    Power = 18,
+                    SuccessRate = 100
+                };
+            case PersonalityType.Headlong: // 猛進：戦法転換はAIがターンに応じた実際の技へ展開する。
+                if (index == 0) return normalAttack;
+                return new SkillData
+                {
+                    SkillName = "戦法転換",
+                    SkillType = SkillType.BattleCycle,
+                    Power = 0,
+                    SuccessRate = 100
+                };
+            case PersonalityType.Sincere: // 誠実：1つ目に攻撃強化、2つ目に属性魔法を持たせる。
+                if (index != 0) return elementSkill;
+                return new SkillData
+                {
+                    SkillName = "実直な鍛錬",
+                    SkillType = SkillType.AttackBuff,
+                    Power = 0,
+                    SuccessRate = 100
+                };
+            case PersonalityType.Insidious: // 陰湿：2つ目の絡め手で弱体を段階的に付与する。
+                if (index == 0) return normalAttack;
+                return CreateDebuffCombo();
+            case PersonalityType.Adaptive: // 適応：2つ目にHP回復の再生を持たせる。
+                if (index == 0) return normalAttack;
+                return new SkillData
+                {
+                    SkillName = "再生",
+                    SkillType = SkillType.Heal,
+                    Power = 15,
+                    SuccessRate = 100
+                };
+            case PersonalityType.Flexible: // 柔軟：模倣はAIが相手の直近の技へ展開する。
+                if (index == 0) return normalAttack;
+                return new SkillData
+                {
+                    SkillName = "模倣",
+                    SkillType = SkillType.Mimic,
+                    Power = 0,
+                    SuccessRate = 100
+                };
+            case PersonalityType.Bold: // 大胆：通常攻撃と強撃。AIはPower最大の強撃を選ぶ。
+                return index == 0 ? normalAttack : CreateStrongAttack();
 
             case PersonalityType.Calm: // 冷静：防御集中と属性魔法。AIは全体の1・2ターン目は防御集中、以降は魔法を選ぶ。
-                return index == 0 ? new SkillData // 1つ目には以下の防御力強化スキルを作る。
-                {
-                    SkillName = "防御集中", // 防御力強化の表示名。
-                    SkillType = SkillType.DefenseBuff, // 実行時に自分のDefenseBuffを5加算する。
-                    Power = 0, // 強化量には使われず、AIのPower比較では0として扱う。
-                    SuccessRate = 100 // 実行前の成功判定は100%で通る。
-                } : elementSkill; // indexが0以外なら、使用者の属性に対応する魔法を返す。
+                return index == 0 ? CreateDefenseBuff() : elementSkill;
 
             case PersonalityType.faith: // 信仰：通常攻撃と祈り。相手の直前の技と同じ種別を所持していれば選び、なければランダムに選ぶ。
                 return index == 0 ? normalAttack : new SkillData // 1つ目は通常攻撃、2つ目は以下の祈りを返す。
                 {
                     SkillName = "祈り", // ランダム効果を起こすスキルの表示名。
-                    SkillType = SkillType.RandomSkill, // 成功分岐では、自分が持つRandomSkill以外の技を再実行する。この組み合わせでは通常攻撃が候補。
+                    SkillType = SkillType.RandomSkill, // 奇跡では相手に固定ダメージ・ランダムデバフ・即死のいずれか1つを起こす。
                     Power = 0, // 祈り自体の効果量には使わず、AIのPower比較用の値は0にする。
                     SuccessRate = 100 // 祈りの処理開始は100%成功するが、その中で別途、成功・何も起きない・天罰を抽選する。
                 };
@@ -152,29 +218,23 @@ public class MonsterFactory
                     SuccessRate = 75 // 効果の実行前に75%で成功する。
                 };
 
-            case PersonalityType.Aggressive: // 挑戦：即死狙いと乱数魔技。AIはSuccessRateが低い即死狙いを選ぶ。
+            case PersonalityType.Aggressive: // 挑戦：所持技は即死狙いと乱数魔技。AIは即死狙いのみ選び、封印中は待機する。
                 return index == 0 ? new SkillData // 1つ目には以下の即死スキルを作る。
                 {
                     SkillName = "即キル狙い", // 即死効果の表示名。
-                    SkillType = SkillType.InstantDeath, // 実行前の成功判定を通った後、別の15%判定に成功すると相手のHPを0にする。
+                    SkillType = SkillType.InstantDeath, // 成功判定を通ると相手のHPを0にする（不屈は踏みとどまれる）。
                     Power = 0, // 即死の確率や効果には使わず、AIのPower比較用の値は0にする。
                     SuccessRate = 2.5 // 2.5%の確率で相手を即シさせる
                 } : new SkillData // indexが0以外なら、以下のランダムスキルを作る。
                 {
                     SkillName = "乱数魔技", // 祈りと同じRandomSkill処理を使う別名のスキル。
-                    SkillType = SkillType.RandomSkill, // 成功分岐で再実行する候補は所持スキルから選ぶ。この組み合わせでは即死狙いが候補。
+                    SkillType = SkillType.RandomSkill, // 祈りと共通の奇跡・不発・天罰処理。効果は所持技に依存しない。
                     Power = 0, // ランダム効果そのものには使わず、AIのPower比較用の値は0にする。
                     SuccessRate = 100 // 処理開始は100%成功するが、内部の効果抽選や再実行する技の成功判定は別に行う。
                 };
 
             case PersonalityType.Timid: // 臆病：回復と毒霧。AIはHPが最大HPの整数除算による半分以下なら回復、それ以外ではこの2つからランダムに選ぶ。
-                return index == 0 ? new SkillData // 1つ目には以下の回復スキルを作る。この所持スキルにはAIが探す無敵スキルはない。
-                {
-                    SkillName = "回復", // HP回復の表示名。
-                    SkillType = SkillType.Heal, // 自分のHPを回復し、最大HPを超えないようにする。
-                    Power = 20, // 攻撃ダメージではなく回復量20として使う。AIのPower比較でも同じ値を参照する。
-                    SuccessRate = 100 // 実行前の成功判定は100%で通る。
-                } : new SkillData // indexが0以外なら、以下の毒付与スキルを作る。
+                return index == 0 ? CreateHeal() : new SkillData // indexが0以外なら、以下の毒付与スキルを作る。
                 {
                     SkillName = "毒霧", // 毒状態を与えるスキルの表示名。
                     SkillType = SkillType.PoisonDebuff, // 相手の状態異常を毒に設定する。継続ダメージはターン終了時の別処理で発生する。
@@ -182,27 +242,96 @@ public class MonsterFactory
                     SuccessRate = 70 // 70%で成功した場合に毒を付与する。
                 };
 
-            default: // 定義済みの6性格に一致しない値が渡された場合の予備処理。
+            default: // 定義済みの性格に一致しない値が渡された場合の予備処理。
                 return index == 0 ? normalAttack : elementSkill; // 1つ目は通常攻撃、0以外は属性魔法を返す。
         }
     }
 
+    // 共通技の定義はここで確認する。技ごとに全設定値を明記し、呼ぶたびに新しいデータを作る。
+    /// <summary>全性格で共有する「通常攻撃」。所持技の生成時と、代わりの攻撃を選ぶときに使う。</summary>
+    public static SkillData CreateNormalAttack()
+    {
+        return new SkillData // 毎回新しく作り、コピーなどで他のモンスターの技が書き換わることを防ぐ。
+        {
+            SkillName = "通常攻撃", // 行動ログの表示名。
+            SkillType = SkillType.NormalAttack, // 使用者の属性で攻撃。スキル封印中も使用できる。
+            Power = 0, // 技の追加威力は0だが、使用者の攻撃力によるダメージは発生する。
+            SuccessRate = 100 // 通常攻撃の成功判定は必ず通る。
+        };
+    }
+
+    /// <summary>大胆・猛進や、代わりの攻撃として使う共通の「強撃」。調整はこの1か所で行う。</summary>
+    public static SkillData CreateStrongAttack()
+    {
+        return new SkillData
+        {
+            SkillName = "強撃",
+            SkillType = SkillType.StrongAttack,
+            Power = 12, // ダメージ計算へ加える威力。
+            SuccessRate = 65 // 大胆と同じ成功率。失敗した場合はダメージが発生しない。
+        };
+    }
+
+    /// <summary>陰湿と猛進が使う「絡め手」。毒・防御低下・封印の順で相手を弱体化する。</summary>
+    public static SkillData CreateDebuffCombo()
+    {
+        return new SkillData
+        {
+            SkillName = "絡め手",
+            SkillType = SkillType.DebuffCombo,
+            Power = 0, // 効果の段階はSkillExecutor.ApplyDebuffで判定する。
+            SuccessRate = 100
+        };
+    }
+
+    /// <summary>臆病と猛進が使う「回復」。最大HPを上限に20回復する。</summary>
+    public static SkillData CreateHeal()
+    {
+        return new SkillData
+        {
+            SkillName = "回復",
+            SkillType = SkillType.Heal,
+            Power = 20, // この技では回復量として使う。
+            SuccessRate = 100
+        };
+    }
+
+    /// <summary>冷静と猛進が使う「防御集中」。実行時に防御補正を5加算する。</summary>
+    public static SkillData CreateDefenseBuff()
+    {
+        return new SkillData
+        {
+            SkillName = "防御集中",
+            SkillType = SkillType.DefenseBuff,
+            Power = 0, // 強化量5はSkillExecutorで適用する。
+            SuccessRate = 100
+        };
+    }
+
     /// <summary>
     /// 属性に対応した魔法スキルを返す。攻撃属性はSkillTypeに応じてSkillExecutorが決める。
+    /// 生成時と、AIが代わりの攻撃を選ぶときに共用する。使用者の属性を渡す。
+    /// 光・闇の出現可否は生成時のMonsterSpawnRulesで判定済み。ここでは対応する技を作る。
+    /// 全5属性とも成功率90％。有利時は攻撃力2倍、それ以外は通常攻撃相当の計算を使う。
+    /// Power=10は既存AIが魔法を選ぶための比較値で、魔法ダメージへの加算には使わない。
     /// </summary>
-    private SkillData CreateElementSkill(ElementType element) // 性格別スキルの候補として、指定属性の魔法を作る。
+    public static SkillData CreateElementSkill(ElementType element) // 指定属性の魔法を作る共通の入口。
     {
         switch (element) // モンスターの属性に対応する魔法へ分岐する。
         {
             case ElementType.Fire: // 火属性なら炎魔法を選ぶ。
-                return new SkillData { SkillName = "炎魔法", SkillType = SkillType.FireMagic, Power = 10, SuccessRate = 90 }; // 表示名・火魔法種別・ダメージ加算10・実行前成功率90%を設定する。
+                return new SkillData { SkillName = "炎魔法", SkillType = SkillType.FireMagic, Power = 10, SuccessRate = 90 };
             case ElementType.Water: // 水属性なら水魔法を選ぶ。
-                return new SkillData { SkillName = "水魔法", SkillType = SkillType.WaterMagic, Power = 10, SuccessRate = 90 }; // 表示名・水魔法種別・ダメージ加算10・実行前成功率90%を設定する。
-            case ElementType.Grass: // 草属性なら草魔法を選ぶ。ただし現在のGetRandomElementの抽選からは草属性は出ない。
-                return new SkillData { SkillName = "草魔法", SkillType = SkillType.GrassMagic, Power = 10, SuccessRate = 90 }; // 表示名・草魔法種別・ダメージ加算10・実行前成功率90%を設定する。
-
-            default: // 上記の属性以外に対応する魔法は定義していない。
-                return null; // 代替スキルは生成せずnullを返すため、この値を使う呼び出し側には注意が必要。
+                return new SkillData { SkillName = "水魔法", SkillType = SkillType.WaterMagic, Power = 10, SuccessRate = 90 };
+            case ElementType.Grass: // 草属性なら草魔法を選ぶ。
+                return new SkillData { SkillName = "草魔法", SkillType = SkillType.GrassMagic, Power = 10, SuccessRate = 90 };
+            case ElementType.Light:
+                return new SkillData { SkillName = "光魔法", SkillType = SkillType.LightMagic, Power = 10, SuccessRate = 90 };
+            case ElementType.Dark:
+                return new SkillData { SkillName = "闇魔法", SkillType = SkillType.DarkMagic, Power = 10, SuccessRate = 90 };
+            default:
+                // 新属性の魔法を作り忘れた場合、nullのスキルを持たせず生成時点で知らせる。
+                throw new System.ArgumentOutOfRangeException(nameof(element), element, "属性魔法が未定義です。");
         }
     }
 }

@@ -36,6 +36,7 @@ public class AllResultSceneController : MonoBehaviour
     private TMP_Text feedbackText;
     private TMP_Text rankingText;
     private bool hasRankingDecision;
+    private bool isKingdomRaidEnding;
 
     private async void Awake()
     {
@@ -49,9 +50,24 @@ public class AllResultSceneController : MonoBehaviour
 
         // 結果画面に入った時点の名前と成績を固定し、確認中に変わらないようにする。
         currentMode = GameSession.Instance.mode;
-        finalCoin = GameSession.Instance.CurrentCoin;
+        isKingdomRaidEnding = currentMode == ModeType.story
+            && GameSession.Instance.CurrentMatchResult != null
+            && GameSession.Instance.CurrentMatchResult.IsKingdomRaidEnding;
+        finalCoin = isKingdomRaidEnding ? 0 : GameSession.Instance.CurrentCoin;
         finalRound = GameSession.Instance.CurrentRound;
         rankingPlayerName = GameSession.Instance.RankingPlayerName;
+
+        if (isKingdomRaidEnding)
+        {
+            // 長い隠しエンドの文章を、既存の説明枠の中に折り返して表示する。
+            Canvas canvas = endingText.GetComponentInParent<Canvas>();
+            endingText.transform.SetParent(canvas.transform, false);
+            Place(endingText.rectTransform, 0, -76, 660, 180);
+            endingText.enableAutoSizing = true;
+            endingText.fontSizeMin = 18;
+            endingText.fontSizeMax = 24;
+            endingText.alignment = TextAlignmentOptions.Center;
+        }
 
         //テキストは最初は0に設定する
         endingText.alpha = 0;
@@ -106,13 +122,15 @@ public class AllResultSceneController : MonoBehaviour
         //-------------------------
         finalCoinText.text = "0";
 
-        int displayCoin = 0;
+        float coinProgress = 0f;
 
-        await DOTween.To(() => displayCoin, x =>
+        await DOTween.To(() => coinProgress, x =>
         {
-            displayCoin = x;
+            coinProgress = x;
+            // int上限付近もfloatへの丸めで負数にならないよう、doubleで補間する。
+            int displayCoin = (int)System.Math.Min(coin, System.Math.Round(coin * (double)Mathf.Clamp01(x)));
             finalCoinText.text = displayCoin.ToString();
-        }, coin, 1.5f) // ←時間調整OK
+        }, 1f, 1.5f) // ←時間調整OK
         .SetEase(Ease.OutCubic)//イージングを設定
         .AsyncWaitForCompletion();
 
@@ -127,8 +145,11 @@ public class AllResultSceneController : MonoBehaviour
 
         if (mode == ModeType.story)
         { 
+            // 摘発はコイン0の通常エンドより優先する。
+            if (isKingdomRaidEnding)
+                ending = "摘発エンド(SECRET END)\n長引く勝負の最中、王国の兵士が闘技場に踏み込んだ。\n違法賭博に参加していたあなたは捕らえられ、コインもすべて没収。\n一攫千金の夢は、牢屋の中で幕を閉じた……。\n「てかよくそんなとこまでいったね　by製作者」";
             //コインが0以下のとき債務者
-            if (coin <= 0)
+            else if (coin <= 0)
                 ending = "債務者エンド(WORST END)\nうらに全てを奪われ、スライムとして戦うことになってしまった、、、";
             //コインが100以下の時は敗北エンドに移行
             else if (coin <= 100)
@@ -155,6 +176,8 @@ public class AllResultSceneController : MonoBehaviour
             //-------------------------
 
         endingText.text = "";
+        // タイピング中の文字が見えるよう、空にしてから透明度を戻す。
+        endingText.alpha = 1f;
 
         //一文字ずつタイピングアニメーション形式で出力する
         foreach (char c in ending)
@@ -164,13 +187,9 @@ public class AllResultSceneController : MonoBehaviour
         }
 
         //-------------------------
-        // ④ フェードイン（追加演出）
+        // ④ 操作案内のフェードイン
         //-------------------------
        
-        //0.5秒かけてエンディング文を表示させる
-        await endingText.DOFade(1f, 0.5f)
-            .AsyncWaitForCompletion();
-
         //0.5秒かけてクリックして画面に戻るように指示をする
         await announceText.DOFade(1f, 0.5f)
             .AsyncWaitForCompletion();
@@ -336,7 +355,7 @@ public class AllResultSceneController : MonoBehaviour
         rankingText = CreateText(rankingPanel.transform, "RankingEntries", "", 18, 0, -157, 740, 105);
         rankingText.alignment = TextAlignmentOptions.TopLeft;
         rankingText.richText = false;
-        CreateButton(rankingPanel.transform, "ReturnButton", "タイトルへ戻る", 0, -235, 250, 42, ReturnToTitle);
+        CreateButton(rankingPanel.transform, "ReturnButton", "タイトルへ戻る", 0, -210, 250, 42, ReturnToTitle);
 
         if (string.IsNullOrWhiteSpace(rankingPlayerName))
         {

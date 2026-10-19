@@ -4,8 +4,17 @@ using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using Cysharp.Threading.Tasks;
 using DG.Tweening;
-using System.Threading;
+using System.Globalization;
+using UnityEngine.EventSystems;
+using UnityEngine.InputSystem.UI;
 
+/// <summary>
+/// 賭け金操作の追い方：
+/// ・ボタン長押し：StartIncrease / StartDecrease → StartLongPress → Update → ChangeBetAmount。
+/// ・直接入力：Startでイベント登録 → CommitBetInput → SetBetAmount。
+/// ・共通の確定処理：SetBetAmountで範囲を補正 → RefreshBetTextでUIに反映。
+/// ・対戦開始：PrepareBetで入力を確定 → SaveBetDataでGameSessionへ保存。
+/// </summary>
 public class BetSceneController : MonoBehaviour
 {
     [Header("上部表示")]
@@ -35,7 +44,11 @@ public class BetSceneController : MonoBehaviour
 
     //
     [Header("賭け金")]
+    // 以前からある数値テキスト。Betシーンでは入力欄の子に移し、表示用として再利用する。
     [SerializeField] private TMP_Text betAmountText;
+    // Betシーンに追加したBetAmountInputを割り当てる。Text AreaのRectMask2Dで文字のはみ出しを防ぐ。
+    // シーン側で1行入力・最大10桁・数字キーボード・選択時の全選択を設定している。
+    [SerializeField] private TMP_InputField betAmountInput;
 
     [Header("詳細画面")]
     [SerializeField] private LeftStatusDetailView leftStatusView;
@@ -45,6 +58,16 @@ public class BetSceneController : MonoBehaviour
     [SerializeField] private AudioSource audio;
     [SerializeField] private AudioClip betSE;     // カチカチ音
     [SerializeField] private AudioClip selectSE;  // 決定音
+
+    [Header("操作受付")]
+    [Tooltip("登場演出が終わってから操作を受け付けるまでの秒数。押している入力の解放も待ちます。")]
+    [SerializeField, Min(0f)] private float inputEnableDelay = 0.5f;
+
+    private readonly SceneInputGate inputGate = new SceneInputGate();
+    private Selectable[] betAmountControls = new Selectable[0];
+    private bool introCompleted;
+    private bool isTransitioning;
+    private bool CanAcceptInput => isActiveAndEnabled && inputGate.IsOpen && !isTransitioning && !isOpeningStatus;
 
     private bool isOpeningStatus = false;
 
@@ -68,10 +91,11 @@ public class BetSceneController : MonoBehaviour
     // 🔥 長押し
     // =========================
 
-    //
+    // 長押しの繰り返しをUpdateで管理する。待機中の非同期処理を残さず、その場で停止できる。
     private bool isPressing = false;
-    private bool isIncrease = true;
-    private CancellationTokenSource cts;
+    private bool isIncrease = true; // trueなら増額、falseなら減額。
+    private float nextRepeatTime; // 次に1コイン変更する時刻。ゲーム速度の影響を受けない時間を使う。
+    private float repeatInterval; // 繰り返す間隔。長押し中に短くして操作を加速する。
 
     // =========================
     // 🔊 SE再生
@@ -89,6 +113,22 @@ public class BetSceneController : MonoBehaviour
         }
     }
 
+    private void Awake()
+    {
+        if (betAmountRoot != null)
+            betAmountControls = betAmountRoot.GetComponentsInChildren<Selectable>(true);
+        // StartやEventSystemの処理より前に無効化する。
+        RefreshInteractionState();
+    }
+
+    private void OnEnable()
+    {
+        inputGate.Lock();
+        if (introCompleted && !isTransitioning)
+            inputGate.Schedule(Time.unscaledTime, inputEnableDelay);
+        RefreshInteractionState();
+    }
+
     private void Start()
     {
         if (GameSession.Instance == null)
@@ -99,7 +139,16 @@ public class BetSceneController : MonoBehaviour
 
         RefreshCoinText();
         SetupMonsterViews();
-        RefreshBetText();
+        if (betAmountInput != null)
+        {
+            // 入力途中は数字だけを受け付け、Enterやフォーカスを外した時に金額を確定する。
+            betAmountInput.onValidateInput = ValidateBetCharacter;
+            betAmountInput.onEndEdit.AddListener(CommitBetInput);
+            // 金額を直接編集し始めたら、ボタンの長押しによる変更を止める。
+            betAmountInput.onSelect.AddListener(OnBetInputSelected);
+        }
+        // 初期値10より所持コインが少ない場合も、最初から有効な金額に補正する。
+        SetBetAmount(currentBetAmount);
 
         leftStatusView?.Clear();
         leftStatusView?.Close();
@@ -120,14 +169,16 @@ public class BetSceneController : MonoBehaviour
     // =========================
     private async UniTask PlayIntro()
     {
+        var cancellationToken = this.GetCancellationTokenOnDestroy();
         //最初に透明に設定している
         coinCanvas.alpha = 0f;
 
         //コインキャンパスを0.5秒かけて表示させる
-        await coinCanvas.DOFade(1f, 0.5f).AsyncWaitForCompletion();
+        await coinCanvas.DOFade(1f, 0.5f).SetUpdate(true).SetLink(gameObject)
+            .AsyncWaitForCompletion().AsUniTask().AttachExternalCancellation(cancellationToken);
 
         //300ミリ秒待機させる
-        await UniTask.Delay(300);
+        await UniTask.Delay(300, ignoreTimeScale: true, cancellationToken: cancellationToken);
 
         //キャンパスを不透明にする
         leftCharaCanvas.alpha = 1f;
@@ -150,124 +201,212 @@ public class BetSceneController : MonoBehaviour
 
         //
         await UniTask.WhenAll(
-            l.DOAnchorPosX(lx + 80, 0.4f).SetEase(Ease.OutBack).AsyncWaitForCompletion().AsUniTask(),
-            r.DOAnchorPosX(rx - 80, 0.4f).SetEase(Ease.OutBack).AsyncWaitForCompletion().AsUniTask()
-        );
+            l.DOAnchorPosX(lx + 80, 0.4f).SetEase(Ease.OutBack).SetUpdate(true).SetLink(gameObject).AsyncWaitForCompletion().AsUniTask(),
+            r.DOAnchorPosX(rx - 80, 0.4f).SetEase(Ease.OutBack).SetUpdate(true).SetLink(gameObject).AsyncWaitForCompletion().AsUniTask()
+        ).AttachExternalCancellation(cancellationToken);
 
         //
         await UniTask.WhenAll(
-            l.DOAnchorPosX(lx, 0.2f).AsyncWaitForCompletion().AsUniTask(),
-            r.DOAnchorPosX(rx, 0.2f).AsyncWaitForCompletion().AsUniTask()
-        );
+            l.DOAnchorPosX(lx, 0.2f).SetUpdate(true).SetLink(gameObject).AsyncWaitForCompletion().AsUniTask(),
+            r.DOAnchorPosX(rx, 0.2f).SetUpdate(true).SetLink(gameObject).AsyncWaitForCompletion().AsUniTask()
+        ).AttachExternalCancellation(cancellationToken);
+
+        introCompleted = true;
+        if (isActiveAndEnabled && !isTransitioning)
+            inputGate.Schedule(Time.unscaledTime, inputEnableDelay);
+    }
+
+    private void LateUpdate()
+    {
+        if (!introCompleted || isTransitioning || inputGate.IsOpen) return;
+        // EventSystemのUpdateで離した瞬間のクリックを処理し終えてから解放する。
+        if (inputGate.TryOpen(Time.unscaledTime, Time.frameCount, IsInputHeld()))
+        {
+            EventSystem.current?.SetSelectedGameObject(null);
+            RefreshInteractionState();
+        }
+    }
+
+    private static bool IsInputHeld()
+    {
+        if (!Application.isFocused || Input.anyKey || Input.touchCount > 0) return true;
+        // BetシーンのInput System側の決定・クリックも確認する。
+        var module = EventSystem.current?.currentInputModule as InputSystemUIInputModule;
+        return module != null && (module.submit?.action?.IsPressed() == true
+            || module.leftClick?.action?.IsPressed() == true
+            || module.rightClick?.action?.IsPressed() == true
+            || module.middleClick?.action?.IsPressed() == true);
+    }
+
+    private void RefreshInteractionState()
+    {
+        bool canUseMenu = CanAcceptInput;
+        bool canBet = canUseMenu && currentBetAmount >= MIN_BET
+            && GameSession.Instance != null && GameSession.Instance.CurrentCoin >= MIN_BET;
+        if (leftStatusButton != null) leftStatusButton.interactable = canUseMenu;
+        if (rightStatusButton != null) rightStatusButton.interactable = canUseMenu;
+        if (leftSelectButton != null) leftSelectButton.interactable = canBet;
+        if (rightSelectButton != null) rightSelectButton.interactable = canBet;
+        foreach (var control in betAmountControls)
+            if (control != null) control.interactable = canBet;
+        if (betAmountInput != null) betAmountInput.interactable = canBet;
     }
 
     // =========================
     // 🔥 賭け金操作（SEあり）
     // =========================
+    // 単発クリック用の入口。現在のBetシーンの増減ボタンは、下のPointerDown用メソッドを使う。
+    // 同じボタンに両方を登録すると、押した時と離した時に二重加算するため注意する。
     public void OnClickBetUp()
     {
-        audio.PlayOneShot(betSE);
-
-        int max = GameSession.Instance.CurrentCoin;
-
-        currentBetAmount += BET_STEP;
-        if (currentBetAmount > max)
-            currentBetAmount = max;
-
-        RefreshBetText();
+        if (!CanAcceptInput) return;
+        FinishBetInput();
+        ChangeBetAmount(BET_STEP, true);
     }
 
     public void OnClickBetDown()
     {
-        audio.PlayOneShot(betSE);
-
-        currentBetAmount -= BET_STEP;
-        if (currentBetAmount < MIN_BET)
-            currentBetAmount = MIN_BET;
-
-        RefreshBetText();
+        if (!CanAcceptInput) return;
+        FinishBetInput();
+        ChangeBetAmount(-BET_STEP, true);
     }
 
     private void RefreshBetText()
     {
-        betAmountText.text = currentBetAmount.ToString();
+        // OSの地域設定に左右されない、桁区切りなしの数字で表示する。
+        string value = currentBetAmount.ToString(CultureInfo.InvariantCulture);
+        if (betAmountInput != null)
+        {
+            // コードから表示を更新するときは、onValueChangedを通知しない。
+            betAmountInput.SetTextWithoutNotify(value);
+        }
+        else if (betAmountText != null)
+        {
+            // 入力欄が未設定の構成でも、以前のテキスト表示を使えるようにする。
+            betAmountText.text = value;
+        }
+
+        // 表示更新によって、演出中・待機中の入力ロックを解除しない。
+        RefreshInteractionState();
     }
 
-    // =========================
-    // 🔥 長押し（SEなし）
-    // =========================
-    private void Execute()
+    // ボタン操作と直接入力を、同じ範囲（1〜所持コイン）に補正する。
+    private void SetBetAmount(long amount)
     {
-        if (isIncrease)
-            Increase_NoSE();
+        int max = GameSession.Instance == null ? 0 : Mathf.Max(0, GameSession.Instance.CurrentCoin);
+        // 所持金がある場合は最低1・最高所持金。所持金がない場合だけ0を許可する。
+        // 大きな入力も先に範囲内へ収めるので、最後にintへ変換しても桁あふれしない。
+        currentBetAmount = max < MIN_BET ? 0 : (int)System.Math.Max(MIN_BET, System.Math.Min(amount, max));
+        RefreshBetText();
+    }
+
+    // deltaは増減量。押した瞬間だけ音を鳴らし、長押し中の連続音や上限での空打ち音を防ぐ。
+    private void ChangeBetAmount(int delta, bool playSound)
+    {
+        int previous = currentBetAmount;
+        // intの上限で加算してもオーバーフローしないようlongで計算する。
+        SetBetAmount((long)currentBetAmount + delta);
+        if (playSound && previous != currentBetAmount) PlaySE(betSE);
+    }
+
+    private char ValidateBetCharacter(string text, int position, char character)
+    {
+        // 半角数字以外は空文字ではなく「無効な1文字」を表す'\0'を返して入力を拒否する。
+        return character >= '0' && character <= '9' ? character : '\0';
+    }
+
+    private void OnBetInputSelected(string value) => StopLongPress();
+
+    private void CommitBetInput(string value)
+    {
+        if (!CanAcceptInput)
+        {
+            RefreshBetText();
+            return;
+        }
+        // 空欄や不正な入力では、最後に確定した金額に戻す。
+        // TryParseなら変換できなくても例外にならず、longなら10桁の貼り付けも扱える。
+        if (long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out long amount))
+            SetBetAmount(amount);
         else
-            Decrease_NoSE();
+            SetBetAmount(currentBetAmount);
     }
 
-    private void Increase_NoSE()
+    // 入力欄からボタン操作へ移るとき、編集中の値を確定してから次の処理へ渡す。
+    private void FinishBetInput()
     {
-        int max = GameSession.Instance.CurrentCoin;
-
-        currentBetAmount += BET_STEP;
-        if (currentBetAmount > max)
-            currentBetAmount = max;
-
-        RefreshBetText();
+        if (betAmountInput == null) return;
+        if (betAmountInput.isFocused) betAmountInput.DeactivateInputField();
+        CommitBetInput(betAmountInput.text);
     }
 
-    private void Decrease_NoSE()
-    {
-        currentBetAmount -= BET_STEP;
-        if (currentBetAmount < MIN_BET)
-            currentBetAmount = MIN_BET;
-
-        RefreshBetText();
-    }
-
+    // 押した瞬間に1回、0.3秒後から繰り返す。長押し中は徐々に速くする。
+    // BetシーンのEventTrigger設定：増額のPointerDown → StartIncrease、減額 → StartDecrease。
+    // 両ボタンのPointerUpとPointerExit → StopLongPress。減額側のPointerClick設定をPointerExitに直した。
     public void StartIncrease()
     {
-        isIncrease = true;
-        StartLongPress();
+        StartLongPress(true);
     }
 
     public void StartDecrease()
     {
-        isIncrease = false;
-        StartLongPress();
+        StartLongPress(false);
     }
 
     public void StopLongPress()
     {
         isPressing = false;
-        cts?.Cancel();
     }
 
-    private void StartLongPress()
+    private void StartLongPress(bool increase)
     {
+        // 詳細画面を開いている間や賭け金UIが非表示の間は、長押しを開始しない。
+        if (!CanAcceptInput || betAmountRoot == null || !betAmountRoot.activeInHierarchy) return;
+        FinishBetInput();
+        isIncrease = increase;
         isPressing = true;
-
-        cts?.Cancel();
-        cts = new CancellationTokenSource();
-
-        HandleLongPress(cts.Token).Forget();
+        repeatInterval = 0.2f;
+        // 最初の0.3秒は待機するため、短いクリックなら1コインだけ変更される。
+        nextRepeatTime = Time.unscaledTime + 0.3f;
+        ChangeBetAmount(isIncrease ? BET_STEP : -BET_STEP, true);
     }
 
-    private async UniTaskVoid HandleLongPress(CancellationToken token)
+    private void Update()
     {
-        Execute();
-
-        await UniTask.Delay(300, cancellationToken: token);
-
-        float interval = 0.2f;
-
-        while (isPressing && !token.IsCancellationRequested)
+        if (!isPressing) return;
+        // PointerUp/Exitを受け取る前にUIが閉じられても、増減が続かないようにする。
+        if (!CanAcceptInput || betAmountRoot == null || !betAmountRoot.activeInHierarchy)
         {
-            Execute();
-
-            interval = Mathf.Max(0.05f, interval - 0.02f);
-
-            await UniTask.Delay((int)(interval * 1000), cancellationToken: token);
+            StopLongPress();
+            return;
         }
+
+        // 予定時刻になるまで何もしない。低フレームレートでもまとめて大量加算はしない。
+        if (Time.unscaledTime < nextRepeatTime) return;
+        ChangeBetAmount(isIncrease ? BET_STEP : -BET_STEP, false);
+        // 1回ごとに0.02秒短縮し、最短0.05秒間隔（最大で毎秒約20コイン）にする。
+        repeatInterval = Mathf.Max(0.05f, repeatInterval - 0.02f);
+        nextRepeatTime = Time.unscaledTime + repeatInterval;
+    }
+
+    // シーン遷移やコンポーネント無効化でも、押しっぱなしの状態を解除する。
+    private void OnDisable()
+    {
+        StopLongPress();
+        inputGate.Lock();
+        RefreshInteractionState();
+    }
+
+    // 別ウィンドウへの切り替え中にボタンを離すと、PointerUpを受け取れない場合がある。
+    private void OnApplicationFocus(bool hasFocus)
+    {
+        if (!hasFocus) StopLongPress();
+    }
+
+    // アプリがバックグラウンドに回った場合も、復帰後に勝手に増減しないよう停止する。
+    private void OnApplicationPause(bool paused)
+    {
+        if (paused) StopLongPress();
     }
 
     // =========================
@@ -278,8 +417,10 @@ public class BetSceneController : MonoBehaviour
 
     private async UniTask OpenLeftStatusAsync()
     {
-        if (isOpeningStatus) return;
+        if (!CanAcceptInput) return;
+        FinishBetInput();
         isOpeningStatus = true;
+        RefreshInteractionState();
 
         coinText.gameObject.SetActive(false);
         CloseSelectedUI();
@@ -293,15 +434,19 @@ public class BetSceneController : MonoBehaviour
             PredictionSide.Left
         );
 
-        await leftStatusView.PlayOpenAnimation(GameSession.Instance.LeftMonster, odds);
+        await leftStatusView.PlayOpenAnimation(GameSession.Instance.LeftMonster, odds)
+            .AttachExternalCancellation(this.GetCancellationTokenOnDestroy());
 
         isOpeningStatus = false;
+        RefreshInteractionState();
     }
 
     private async UniTask OpenRightStatusAsync()
     {
-        if (isOpeningStatus) return;
+        if (!CanAcceptInput) return;
+        FinishBetInput();
         isOpeningStatus = true;
+        RefreshInteractionState();
 
         coinText.gameObject.SetActive(false);
         CloseSelectedUI();
@@ -315,13 +460,16 @@ public class BetSceneController : MonoBehaviour
             PredictionSide.Right
         );
 
-        await rightStatusView.PlayOpenAnimation(GameSession.Instance.RightMonster, odds);
+        await rightStatusView.PlayOpenAnimation(GameSession.Instance.RightMonster, odds)
+            .AttachExternalCancellation(this.GetCancellationTokenOnDestroy());
 
         isOpeningStatus = false;
+        RefreshInteractionState();
     }
 
     public void OnClickBackMenu()
     {
+        if (!CanAcceptInput) return;
         leftStatusView?.Close();
         rightStatusView?.Close();
 
@@ -338,7 +486,13 @@ public class BetSceneController : MonoBehaviour
     private void CloseSelectedUI() => selectedUIRoot?.SetActive(false);
 
     private void OpenBetAmountUI() => betAmountRoot?.SetActive(true);
-    private void CloseBetAmountUI() => betAmountRoot?.SetActive(false);
+    private void CloseBetAmountUI()
+    {
+        // UIを隠す前に長押しを止め、直接入力中の金額を確定する。
+        StopLongPress();
+        FinishBetInput();
+        betAmountRoot?.SetActive(false);
+    }
 
     //コインの情報を反映させる
     private void RefreshCoinText()
@@ -371,28 +525,17 @@ public class BetSceneController : MonoBehaviour
     // =========================
 
     //左を選択をした場合
-    public void OnClickLeftSelect()
-    {
-        //効果音を再生をする
-        PlaySE(selectSE);
-
-        //選択したデータを反映をする
-        selectedSide = PredictionSide.Left;
-        hasSelectedSide = true;
-
-        //
-        UpdateSelectButtonColors();
-        SaveBetData();
-
-        SceneManager.LoadScene(SceneNames.Battle);
-    }
+    public void OnClickLeftSelect() => SelectAndStartBattle(PredictionSide.Left);
 
     //右を選択をした場合
-    public void OnClickRightSelect()
+    public void OnClickRightSelect() => SelectAndStartBattle(PredictionSide.Right);
+
+    private void SelectAndStartBattle(PredictionSide side)
     {
+        if (!PrepareBet()) return;
         PlaySE(selectSE);
 
-        selectedSide = PredictionSide.Right;
+        selectedSide = side;
         hasSelectedSide = true;
 
         UpdateSelectButtonColors();
@@ -406,6 +549,7 @@ public class BetSceneController : MonoBehaviour
     {
         if (leftSelectButton == null || rightSelectButton == null) return;
 
+        //選択をするとフレームが黄色になるように設定をする
         Color normalColor = Color.white;
         Color selectedColor = new Color(1f, 0.9f, 0.4f);
 
@@ -431,6 +575,22 @@ public class BetSceneController : MonoBehaviour
             leftButtonImage.color = normalColor;
             rightButtonImage.color = selectedColor;
         }
+    }
+
+    // Enterを押さずに対戦相手を選んでも、最新の入力額を保存できるようにする。
+    private bool PrepareBet()
+    {
+        if (!CanAcceptInput || GameSession.Instance == null) return false;
+        StopLongPress();
+        FinishBetInput();
+        // 対戦開始直前の所持コインで再確認し、保存する金額を範囲内に収める。
+        SetBetAmount(currentBetAmount);
+        if (currentBetAmount < MIN_BET) return false;
+        // 左右の同時クリックや連続コールでも、保存とシーン遷移は1回だけ。
+        isTransitioning = true;
+        inputGate.Lock();
+        RefreshInteractionState();
+        return true;
     }
 
     private void SaveBetData()

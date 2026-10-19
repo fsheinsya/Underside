@@ -30,10 +30,7 @@ public class BattleStatusView : MonoBehaviour
         }
 
         // 状態異常表示
-        if (statusText != null)
-        {
-            statusText.text = $"状態：{GetStatusName(data.StatusAilment)}";
-        }
+        SetStatus(data.StatusAilment, data.IsSkillLocked);
     }
 
     /// <summary>
@@ -50,11 +47,15 @@ public class BattleStatusView : MonoBehaviour
     /// <summary>
     /// 状態異常だけ更新する
     /// </summary>
-    public void SetStatus(StatusAilmentType ailment)
+    public void SetStatus(StatusAilmentType ailment, bool isSkillLocked = false)
     {
         if (statusText != null)
         {
-            statusText.text = $"状態：{GetStatusName(ailment)}";
+            // 毒と封印が重なる場合も表示する。封印だけ残った場合は「なし」ではなく「封印」。
+            string statusName = GetStatusName(ailment);
+            if (isSkillLocked && ailment != StatusAilmentType.SkillSeal)
+                statusName = ailment == StatusAilmentType.None ? "封印" : statusName + "・封印";
+            statusText.text = $"状態：{statusName}";
         }
     }
 
@@ -71,6 +72,8 @@ public class BattleStatusView : MonoBehaviour
             case ElementType.Water: return "水";
             //草を設定をする
             case ElementType.Grass: return "草";
+            case ElementType.Light: return "光";
+            case ElementType.Dark: return "闇";
             //無を設定をする
             default: return "無";
         }

@@ -1,7 +1,7 @@
 using UnityEngine; // 所持スキルからランダムに選ぶため、Unity の Random を利用する。
 
 /// <summary>
-/// 性格・現在HP・ターン数・相手の直近のスキル種別から、今回使うスキルを1つ選ぶAI。
+/// 共通の70/15/15抽選と、性格・現在HP・ターン数・相手の直近の技から行動を選ぶAI。
 /// スキルの効果や成功判定は行わず、選んだスキルの実行は SkillExecutor に任せる。
 /// </summary>
 
@@ -27,16 +27,131 @@ public class ActionAI // 性格ごとの選択ルールと、行動履歴の記�
 
     public SkillData ChooseSkill(MonsterData attacker, MonsterData defender, int turn)
     {
+        // 挑戦・中二は共通の通常攻撃・魔法抽選を使わず、固有技だけを試す。
+        if (attacker.Personality == PersonalityType.Aggressive || attacker.Personality == PersonalityType.Delusional)
+            return ChooseSpecialOnlySkill(attacker);
+
+        // 技を選ぶ確率であり、技自体の成功率は実行時に別途判定する。
+        if (attacker.IsSkillLocked) return MonsterFactory.CreateNormalAttack();
+        // 無能は覚醒まで共通抽選を行わず、通常攻撃だけを使う。
+        if (attacker.Personality == PersonalityType.Inept && !attacker.Awakened)
+            return MonsterFactory.CreateNormalAttack();
+
+        int actionRoll = Random.Range(0, 100);
+        // 大胆だけは魔法枠を設けず、強撃70%・通常攻撃30%。
+        if (attacker.Personality == PersonalityType.Bold)
+            return actionRoll < 70 ? MonsterFactory.CreateStrongAttack() : MonsterFactory.CreateNormalAttack();
+
+        if (actionRoll < 70) return ChoosePersonalitySkill(attacker, defender, turn);
+        if (actionRoll < 85) return MonsterFactory.CreateNormalAttack();
+        return MonsterFactory.CreateElementSkill(attacker.Element);
+    }
+
+    /// <summary>70%の固有行動枠で使う、性格ごとの技選択。共通の抽選はここでは重ねない。</summary>
+    public SkillData ChoosePersonalitySkill(MonsterData attacker, MonsterData defender, int turn)
+    {
+        if (attacker.Personality == PersonalityType.Aggressive || attacker.Personality == PersonalityType.Delusional)
+            return ChooseSpecialOnlySkill(attacker);
+
+        // 封印中も通常攻撃は可能。補助技だけを選び続けて停止しないようにする。
+        if (attacker.IsSkillLocked) return ChooseFallbackAttack(attacker);
         // 所持スキル一覧が未設定、または空なら専用の代替処理に進む。
         if (attacker.Skills == null || attacker.Skills.Count == 0) 
-            return CreateNormalAttack(); // どの性格でも、代わりの通常攻撃を新しく作って返す。
+            return ChooseFallbackAttack(attacker); // 所持技がなくても、共通の攻撃3種類から選べる。
 
         ///<summary>
         /// ↓このswicth文で性格の分岐を実装する
         ///</summary>
 
+        // 性格固有のルールが技を返せばここで選択完了。breakしたケースだけ末尾のランダム選択へ進む。
         switch (attacker.Personality) // 行動する側の性格に対応する分岐へ進む。
         {
+            case PersonalityType.Inept:
+                return attacker.Awakened ? GetStrongest(attacker) : FindSkill(attacker, SkillType.NormalAttack) ?? ChooseFallbackAttack(attacker);
+            case PersonalityType.Stoic:
+            case PersonalityType.Adversity:
+            case PersonalityType.Unyielding:
+            case PersonalityType.Obsessive:
+                return GetStrongest(attacker);
+            case PersonalityType.Explorer:
+                return FindSkill(attacker, SkillType.Dig) ?? ChooseFallbackAttack(attacker);
+            case PersonalityType.Devoted:
+                return FindSkill(attacker, SkillType.AllOutAttack) ?? ChooseFallbackAttack(attacker);
+            case PersonalityType.Impatient:
+                return Random.value < 0.35f ? GetStrongest(attacker) : FindSkill(attacker, SkillType.Wait) ?? ChooseFallbackAttack(attacker);
+            case PersonalityType.Headlong:
+                // 2ターンずつ攻撃→妨害→防御。表示用の戦法転換から実際の技へ展開する。
+                switch (((turn - 1) / 2) % 3)
+                {
+                    case 0:
+                        // 攻撃重視の2ターン。大胆が使う「強撃」と同じ定義を使う。
+                        return MonsterFactory.CreateStrongAttack();
+                    case 1:
+                        // 妨害重視の2ターン。陰湿が使う「絡め手」と同じ定義を使う。
+                        return MonsterFactory.CreateDebuffCombo();
+                    default:
+                        // 防御重視の2ターン。HPが減っていれば回復、満タンなら防御強化を選ぶ。
+                        if (attacker.CurrentHp < attacker.GetCurrentMaxHp())
+                        {
+                            return MonsterFactory.CreateHeal();
+                        }
+                        return MonsterFactory.CreateDefenseBuff();
+                }
+            case PersonalityType.Sincere:
+                return attacker.CurrentHp > attacker.GetCurrentMaxHp() / 2
+                    ? FindSkill(attacker, SkillType.AttackBuff) ?? ChooseFallbackAttack(attacker) : GetStrongest(attacker);
+            case PersonalityType.Insidious:
+                if (attacker.DebuffRejected || defender.CurrentHp <= defender.GetCurrentMaxHp() / 2
+                    || (defender.StatusAilment == StatusAilmentType.Poison && defender.DefenseBuff <= -10 && defender.IsSkillLocked))
+                    return FindSkill(attacker, SkillType.NormalAttack) ?? ChooseFallbackAttack(attacker);
+                return FindSkill(attacker, SkillType.DebuffCombo) ?? ChooseFallbackAttack(attacker);
+            case PersonalityType.Adaptive:
+                return attacker.CurrentHp <= attacker.GetCurrentMaxHp() / 3
+                    ? FindSkill(attacker, SkillType.Heal) ?? ChooseFallbackAttack(attacker) : FindSkill(attacker, SkillType.NormalAttack) ?? ChooseFallbackAttack(attacker);
+            case PersonalityType.Flexible:
+                // ① 無能・挑戦・中二はコピー元にしない。通常攻撃を使った場合も対象外。
+                if (defender.Personality == PersonalityType.Inept
+                    || defender.Personality == PersonalityType.Aggressive
+                    || defender.Personality == PersonalityType.Delusional)
+                    return ChooseFallbackAttack(attacker);
+
+                // ② 相手が直近に選んだ技を確認する。行動履歴がなければ共通の攻撃から選ぶ。
+                var previous = defender.LastUsedSkill;
+                if (previous == null) return ChooseFallbackAttack(attacker);
+
+                // ③ コピーできるのは通常攻撃・強撃・実装済みの5属性魔法だけ。
+                // 回復・強化・妨害・即死・発掘・全身全霊などの特殊技はコピーしない。
+                switch (previous.SkillType)
+                {
+                    case SkillType.NormalAttack:
+                    case SkillType.StrongAttack:
+                    case SkillType.FireMagic:
+                    case SkillType.WaterMagic:
+                    case SkillType.GrassMagic:
+                    case SkillType.LightMagic:
+                    case SkillType.DarkMagic:
+                        break; // 対象の攻撃技なら、次のコピー成功判定へ進む。
+                    default:
+                        return ChooseFallbackAttack(attacker);
+                }
+
+                // ④ 適応の技は50％でコピーできる。それ以外の対象性格からは必ずコピーする。
+                // 失敗時は共通の攻撃から選ぶ。適応の種類別耐性など、性格そのものの効果はコピーしない。
+                if (defender.Personality == PersonalityType.Adaptive && Random.value >= 0.5f)
+                    return ChooseFallbackAttack(attacker);
+
+                // ⑤ 元のデータを変更せず、今回使うコピー技を作る。技自体の成功率は実行時に別途判定する。
+                return new SkillData
+                {
+                    SkillName = "模倣：" + previous.SkillName.Replace("模倣：", ""),
+                    SkillType = previous.SkillType,
+                    Element = previous.Element,
+                    Power = previous.Power,
+                    SuccessRate = previous.SuccessRate,
+                    // Powerだけ減らすと威力0の通常攻撃が弱くならないため、ダメージ全体を80％にする。
+                    // コピー技をさらにコピーした場合も、コピー元から80％に下げる。
+                    DamageMultiplier = previous.DamageMultiplier * 0.8f
+                };
             case PersonalityType.Bold: // 大胆：毎回、Power が最大の所持スキルを使う。
                 return GetStrongest(attacker); // 成功率やスキル種別は考慮せず、Power の大きさで選ぶ。
 
@@ -55,19 +170,18 @@ public class ActionAI // 性格ごとの選択ルールと、行動履歴の記�
             case PersonalityType.Taunt: // 挑発：奇数ターンと偶数ターンで、Power の選び方を切り替える。
                 return turn % 2 == 1 ? GetWeak(attacker) : GetStrongest(attacker); // 奇数なら最小、偶数なら最大の Power を選ぶ。
 
-            case PersonalityType.Aggressive: // 挑戦寄り：失敗しやすいスキルを優先する。
-                return GetLowSuccess(attacker); // 威力や IsHighRisk フラグではなく、SuccessRate が最小のものを選ぶ。
-
             case PersonalityType.Timid: // 臆病：HPが少なければ回復を探し、それ以外は無敵化を探す。
-                if (attacker.CurrentHp <= attacker.Stats.MaxHp / 2) // 最大HPの半分以下か判定する。整数除算なので奇数の最大HPは切り捨てる。
+                if (attacker.CurrentHp <= attacker.GetCurrentMaxHp() / 2)
                 {
                     var heal = FindSkill(attacker, SkillType.Heal); // 一覧の先頭から回復スキルを探す。
                     if (heal != null) return heal; // 回復があれば、無敵化よりも優先して選ぶ。
                 }
                 return GetEvasion(attacker); // HPが半分より多い場合や回復がない場合は、無敵化を優先し、なければランダムに選ぶ。
+            default:
+                return ChooseFallbackAttack(attacker); // 性格の行動ルールが未定義でも共通の攻撃で行動する。
         }
 
-        return attacker.Skills[Random.Range(0, attacker.Skills.Count)]; // 信仰で一致する技がない場合や未定義の性格では、全所持スキルから等確率で1つ選ぶ。
+        return attacker.Skills[Random.Range(0, attacker.Skills.Count)]; // 信仰で一致する技がない場合は、通常攻撃・祈りなどの所持技から選ぶ。
     }
 
     // =========================
@@ -97,19 +211,22 @@ public class ActionAI // 性格ごとの選択ルールと、行動履歴の記�
         return weak; // 全件の比較後、Power が最小のスキルを返す。
     }
 
-    // スキル実行前の成功判定に使われる SuccessRate が最小のスキルを返す。
-    //　成功率の低いスキルを優先的に行う(即シ狙いなのでかならず負けるとは限らない)
-    //　オッズを倍にする仕組みを作りたい
-
-    private SkillData GetLowSuccess(MonsterData monster)
+    private SkillData ChooseSpecialOnlySkill(MonsterData attacker)
     {
-        SkillData risky = monster.Skills[0]; // 先頭のスキルを、最も成功率が低い候補にする。
-        foreach (var s in monster.Skills) // 所持スキルを先頭から順番に調べる。
-            if (s.SuccessRate < risky.SuccessRate) // SuccessRate がさらに低いときだけ更新し、同率なら先にある候補を残す。
-                risky = s; // 成功率がより低いスキルを新しい候補にする。
-        return risky; // 即死などの効果内で行われる追加抽選は評価せず、設定された SuccessRate だけで選ぶ。
+        // 固有技がない・封印中でも通常攻撃へ流さず、必ず待機する。
+        if (!attacker.IsSkillLocked && attacker.Skills != null)
+        {
+            SkillType type = attacker.Personality == PersonalityType.Aggressive ? SkillType.InstantDeath : SkillType.Delusion;
+            var skill = FindSkill(attacker, type);
+            if (skill != null) return skill;
+        }
+        return CreateWaitSkill();
     }
 
+    private static SkillData CreateWaitSkill()
+    {
+        return new SkillData { SkillName = "様子見", SkillType = SkillType.Wait, SuccessRate = 100 };
+    }
 
     // 防御強化か回復のうち、一覧で先に見つかったものを返す。現在HPや効果量は比較しない。
 
@@ -121,7 +238,7 @@ public class ActionAI // 性格ごとの選択ルールと、行動履歴の記�
                 s.SkillType == SkillType.Heal) // または回復スキルなら採用する。防御強化との優先順位は一覧順で決まる。
                 return s; // 最初に条件を満たしたスキルを返し、検索を終える。
         }
-        return monster.Skills[0]; // 防御強化も回復もなければ、先頭のスキルを使う。
+        return ChooseFallbackAttack(monster); // 防御強化も回復もなければ、共通の攻撃で行動する。
     }
 
     // 名前は回避用だが、実際には Invincible（無敵化）を探す。回避率の大小は参照しない。
@@ -160,16 +277,26 @@ public class ActionAI // 性格ごとの選択ルールと、行動履歴の記�
         return null; // 同種のスキルを持っていなければ、ChooseSkill 側のランダム選択に任せる。
     }
 
-    // 所持スキルが未設定または空のときだけ使う、代わりの通常攻撃を作る。
-    private SkillData CreateNormalAttack()
+    /// <summary>技が見つからない・コピーできないなど、行動手段がないときの共通の攻撃選択。</summary>
+    public static SkillData ChooseFallbackAttack(MonsterData attacker)
     {
-        return new SkillData // 所持スキル一覧には追加せず、今回の行動用のデータを新しく作って返す。
+        if (attacker.Personality == PersonalityType.Aggressive || attacker.Personality == PersonalityType.Delusional)
+            return CreateWaitSkill();
+
+        // ① 封印中は強撃・魔法が使えないため、必ず通常攻撃にする。
+        if (attacker.IsSkillLocked) return MonsterFactory.CreateNormalAttack();
+
+        // ② 所持スキルとは別に、全性格で使える基本の攻撃を等確率で1つ選ぶ。
+        // コピーではないためダメージ倍率は1倍。成功判定はSkillExecutorで通常どおり行う。
+        switch (Random.Range(0, 3)) // 整数の上限3は含まず、0・1・2がそれぞれ約33％で出る。
         {
-            SkillName = "通常攻撃", // 行動ログなどに表示する名前。
-            SkillType = SkillType.NormalAttack, // SkillExecutor に通常攻撃として処理させる。
-            Power = 0, // 攻撃力に加えるスキル分の威力は0。実際のダメージは攻撃力・防御力などから別途計算する。
-            SuccessRate = 100 // スキル実行前の成功率を100%にする。スキル封印などの状態判定は実行側で行う。
-        };
+            case 0:
+                return MonsterFactory.CreateNormalAttack(); // 追加威力0、成功率100％。
+            case 1:
+                return MonsterFactory.CreateStrongAttack(); // 共通の強撃。追加威力12、成功率65％。
+            default:
+                return MonsterFactory.CreateElementSkill(attacker.Element); // 自分の属性の魔法。有利時は攻撃力2倍、成功率90％。
+        }
     }
 
     /// <summary>
@@ -179,6 +306,8 @@ public class ActionAI // 性格ごとの選択ルールと、行動履歴の記�
     /// </summary>
     public void RecordAction(MonsterData attacker, SkillData skill)
     {
+        // 実行の成否ではなく、AIが選んだ技を記録する。次に行動する信仰・柔軟がこの履歴を読む。
+        attacker.LastUsedSkill = skill;
         attacker.LastUsedSkillType = skill.SkillType; // 行動した本人の履歴を今回の種別で上書きし、過去の履歴は残さない。
     }
 }

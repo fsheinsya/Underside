@@ -6,6 +6,12 @@ using System.Collections.Generic;
 [System.Serializable]
 public class MatchResultData
 {
+    // ストーリーの時間切れは勝敗を付けず、王国兵による摘発エンドへ進む。
+    public bool IsKingdomRaidEnding;
+
+    // 毎ターンのイベントによる増加を含む、その試合の最終配当倍率。
+    public double FinalPayoutMultiplier;
+
     // 勝者名
     public string WinnerName;
 

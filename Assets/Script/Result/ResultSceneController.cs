@@ -24,7 +24,6 @@ public class ResultSceneController : MonoBehaviour
     [SerializeField] private TMP_Text roundText;
     [SerializeField] private TMP_Text boolingWinnerText;
 
-
     [Header("SE")]
     [SerializeField] private AudioSource audio;
     [SerializeField] private AudioClip WinSound;
@@ -238,7 +237,7 @@ public class ResultSceneController : MonoBehaviour
                 lostAmount = GameSession.Instance.CurrentBet.Amount;
             }
 
-            startCoin = targetCoin + lostAmount;
+            startCoin = (int)System.Math.Min(int.MaxValue, (long)targetCoin + lostAmount);
         }
 
         // 不自然なマイナス防止
@@ -258,7 +257,7 @@ public class ResultSceneController : MonoBehaviour
             int min = Mathf.Min(startCoin, targetCoin);
             int max = Mathf.Max(startCoin, targetCoin);
 
-            int fake = Random.Range(min, max + 1);
+            int fake = (int)System.Math.Min(max, min + System.Math.Floor(((double)max - min + 1) * Random.value));
             coinText.text = $"Coin\n{fake}";
 
             await UniTask.Yield();
@@ -270,7 +269,8 @@ public class ResultSceneController : MonoBehaviour
         {
             t += Time.deltaTime * 2f;
 
-            int value = Mathf.RoundToInt(Mathf.Lerp(startCoin, targetCoin, t));
+            int value = (int)System.Math.Min(int.MaxValue,
+                System.Math.Round(startCoin + ((double)targetCoin - startCoin) * Mathf.Clamp01(t)));
             coinText.text = $"Coin\n{value}";
 
             await UniTask.Yield();

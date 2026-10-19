@@ -23,5 +23,12 @@ public enum SkillType
     DefenseDown,
     InstantDeath,
     RandomSkill,
-    None
+    None,
+    Delusion,
+    Dig,
+    AllOutAttack,
+    Wait,
+    BattleCycle,
+    DebuffCombo,
+    Mimic
 }

@@ -1,24 +1,10 @@
 using Cysharp.Threading.Tasks;
-using DG.Tweening;
-using UnityEngine;
 
-//BattleƒV[ƒ“‚Ì¶‚ÌƒLƒƒƒ‰‚ÌƒAƒjƒ[ƒVƒ‡ƒ“‚ğİ’è‚ğ‚·‚é
+// å·¦å´ã¯ç›¸æ‰‹ã®ã„ã‚‹å³æ–¹å‘ã¸é€²ã‚€ã€‚è·é›¢ãƒ»æ™‚é–“ãƒ»æˆ»ã‚Šæ–¹ã¯è¦ªã‚¯ãƒ©ã‚¹ã§å…±é€šåŒ–ã™ã‚‹ã€‚
 public class LeftCharacterView : BattleCharacterView
 {
-    //UŒ‚‚Ì‚É‰E‚É“®‚­‚æ‚¤‚Èƒƒ\ƒbƒh‚ğÀ‘•
-    public override async UniTask PlayAttack()
+    public override UniTask PlayAttack()
     {
-        //SE‚ğ–Â‚ç‚·
-        PlaySE(attackSE);
-
-        //ƒLƒƒƒ‰‚ğ0.15•b‚ÌŠÔŠu‚Å‚¿‚å‚Á‚Æ‰E‚É“®‚©‚·
-        await rect.DOAnchorPos(originalPos + new Vector2(120f, 0), 0.15f)
-            .SetEase(Ease.OutQuad)
-            .AsyncWaitForCompletion();
-
-        //ƒLƒƒƒ‰‚ğŒ³‚ÌˆÊ’u‚É–ß‚·
-        await rect.DOAnchorPos(originalPos, 0.2f)
-            .SetEase(Ease.OutBack)
-            .AsyncWaitForCompletion();
+        return PlayAttackTowards(1f); // Canvasåº§æ¨™ã®å³æ–¹å‘ã¸ã€å…±é€šã®æ”»æ’ƒãƒ¢ãƒ¼ã‚·ãƒ§ãƒ³ã‚’å†ç”Ÿã™ã‚‹ã€‚
     }
 }

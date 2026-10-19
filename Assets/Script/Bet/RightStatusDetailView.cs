@@ -241,20 +241,14 @@ public class RightStatusDetailView : MonoBehaviour
             ElementType.Fire => "炎",
             ElementType.Water => "水",
             ElementType.Grass => "草",
+            ElementType.Light => "光",
+            ElementType.Dark => "闇",
+            _ => "不明"
         };
     }
 
     private string GetPersonalityName(PersonalityType type)
     {
-        return type switch
-        {
-            PersonalityType.Bold => "大胆",
-            PersonalityType.Calm => "冷静",
-            PersonalityType.faith => "信仰",
-            PersonalityType.Taunt => "挑発",
-            PersonalityType.Aggressive => "積極的",
-            PersonalityType.Timid => "臆病",
-            _ => "なし"
-        };
+        return PersonalityNames.Get(type);
     }
 }

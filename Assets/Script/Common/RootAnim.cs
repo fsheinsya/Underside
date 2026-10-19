@@ -1,14 +1,17 @@
 using UnityEngine;
 
+/// <summary>
+/// Animatorを持つルートオブジェクトに付けるためのスクリプト。
+/// </summary>
 public class RootAnim : MonoBehaviour
 {
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
+    // 現在は初期化処理を持たない。必要になったときに開始時処理を追加する。
     void Start()
     {
         
     }
 
-    // Update is called once per frame
+    // 現在は毎フレーム処理を持たない。
     void Update()
     {
         

@@ -1,31 +1,35 @@
 using UnityEngine;
 
-//ƒ_ƒ[ƒW‚ÌŒvZ‚ğŠÇ—‚ğ‚·‚é
+/// <summary>é€šå¸¸ãƒ»å¼·æ”»æ’ƒã¨å±æ€§é­”æ³•ã®ãƒ€ãƒ¡ãƒ¼ã‚¸ã‚’è¨ˆç®—ã™ã‚‹ã€‚</summary>
 public class DamageCalculator
 {
-    //ƒ_ƒ[ƒWŒvZ‚ğs‚¤
-    public int CalculateDamage(MonsterData attacker, MonsterData defender, int power, ElementType element)
+    public int CalculateDamage(MonsterData attacker, MonsterData defender, int power, ElementType element,
+        SkillType attackType = SkillType.None)
     {
-        //UŒ‚‘¤‚ÌUŒ‚ƒXƒe[ƒ^ƒXİ’è
         int attack = attacker.GetCurrentAttack();
-        //–hŒä‘¤‚Ì–hŒäƒXƒe[ƒ^ƒXİ’è
         int defense = defender.GetCurrentDefense();
+        float multiplier = ElementCalculator.GetAttackMultiplier(element, defender.Element);
+
+        switch (attackType)
+        {
+            case SkillType.FireMagic:
+            case SkillType.WaterMagic:
+            case SkillType.GrassMagic:
+            case SkillType.LightMagic:
+            case SkillType.DarkMagic:
+                // é­”æ³•ã®Powerã¯AIã®é¸æŠå„ªå…ˆåº¦ã¨ã—ã¦æ®‹ã—ã€è¿½åŠ ãƒ€ãƒ¡ãƒ¼ã‚¸ã«ã¯ä½¿ã‚ãªã„ã€‚
+                power = 0;
+                if (multiplier > 1f)
+                {
+                    // æœ‰åˆ©æ™‚ã¯æ”»æ’ƒåŠ›ã‚’2å€ã«ã™ã‚‹ã€‚å¾“æ¥ã®æœ‰åˆ©å€ç‡ã¯é‡ã­ãªã„ã€‚
+                    attack *= 2;
+                    multiplier = 1f;
+                }
+                break;
+        }
 
         int damage = Mathf.Max(1, attack - defense / 2 + power + Random.Range(-2, 3));
-
-        float multiplier = GetElementMultiplier(element, defender.Element);
         damage = Mathf.RoundToInt(damage * multiplier);
-
         return Mathf.Max(1, damage);
-    }
-
-    //‘®«“¯m‚Ìƒ_ƒ[ƒW‚ğŒvZ‚ğ‚·‚é@‘Š«‚ª‚¢‚¢‚Æ‚«‚Í1.5”{‚Ì”{—¦‚ÅŒvZ‚ğ‚·‚é
-    private float GetElementMultiplier(ElementType attacker, ElementType defender)
-    {
-        if (attacker == ElementType.Water && defender == ElementType.Fire) return 1.5f;
-        if (attacker == ElementType.Fire && defender == ElementType.Grass) return 1.5f;
-        if (attacker == ElementType.Grass && defender == ElementType.Water) return 1.5f;
-
-        return 1.0f;
     }
 }
