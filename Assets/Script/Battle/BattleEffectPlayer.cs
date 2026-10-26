@@ -30,7 +30,7 @@ public class BattleEffectPlayer : MonoBehaviour
             case SkillType.DarkMagic:
             case SkillType.AllOutAttack:
                 await attacker.PlayAttack();
-                await defender.PlayHit();
+                if (log.TargetTookDamage) await defender.PlayHit();
                 break;
 
             case SkillType.Heal:

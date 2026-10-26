@@ -3,8 +3,6 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using Cysharp.Threading.Tasks;
 using DG.Tweening;
-using UnityEngine.UI;
-using System.Text;
 
 /// <summary>
 /// プレイ全体の最終成績を表示し、ランキングモードでは記録更新の確認を行う。
@@ -29,12 +27,8 @@ public class AllResultSceneController : MonoBehaviour
     private ModeType currentMode;
     private int finalCoin;
     private int finalRound;
-    private GameObject rankingPanel;
+    private RankingResultPanel rankingPanel;
     private string rankingPlayerName;
-    private Button submitButton;
-    private Button declineButton;
-    private TMP_Text feedbackText;
-    private TMP_Text rankingText;
     private bool hasRankingDecision;
     private bool isKingdomRaidEnding;
 
@@ -85,7 +79,7 @@ public class AllResultSceneController : MonoBehaviour
 
         if (rankingPanel != null)
         {
-            rankingPanel.SetActive(true);
+            rankingPanel.Show();
             RefreshRanking();
         }
     }
@@ -209,7 +203,7 @@ public class AllResultSceneController : MonoBehaviour
         // 名前が引き継がれていない場合は、別の名前を推測して保存しない。
         if (string.IsNullOrWhiteSpace(rankingPlayerName))
         {
-            feedbackText.text = "プレイヤー名がありません。名前入力画面から開始してください。";
+            rankingPanel.SetFeedback("プレイヤー名がありません。名前入力画面から開始してください。");
             Debug.LogWarning("[Ranking/Result] プレイヤー名がないため更新できません。", this);
             return;
         }
@@ -219,7 +213,7 @@ public class AllResultSceneController : MonoBehaviour
         // intからulongへ変換する前に、不正な負数や0を除外する。
         if (finalCoin < 0 || finalRound < 1)
         {
-            feedbackText.text = "コイン数またはラウンド数が不正です。";
+            rankingPanel.SetFeedback("コイン数またはラウンド数が不正です。");
             return;
         }
 
@@ -228,18 +222,18 @@ public class AllResultSceneController : MonoBehaviour
             // 「更新する」を押したときだけ、入力画面で選んだ名前の記録を更新する。
             if (!RankingService.Submit(rankingPlayerName, finalCoin, (ulong)finalRound, out string message))
             {
-                feedbackText.text = message;
+                rankingPanel.SetFeedback(message);
                 return;
             }
 
             CompleteRankingDecision();
-            feedbackText.text = message;
+            rankingPanel.SetFeedback(message);
         }
         catch (System.Exception exception)
         {
             // 保存に失敗した場合は決定済みにせず、再試行または更新の辞退を可能にする。
             Debug.LogWarning($"[Ranking/Result] ランキングの保存に失敗しました: {exception}", this);
-            feedbackText.text = "記録を保存できませんでした。もう一度お試しください。";
+            rankingPanel.SetFeedback("記録を保存できませんでした。もう一度お試しください。");
             return;
         }
 
@@ -252,7 +246,7 @@ public class AllResultSceneController : MonoBehaviour
 
         // 辞退した場合は保存処理を呼ばず、以前の記録を残す。
         CompleteRankingDecision();
-        feedbackText.text = "今回の記録は保存しませんでした。";
+        rankingPanel.SetFeedback("今回の記録は保存しませんでした。");
         Debug.Log($"[Ranking/Result] 名前「{rankingPlayerName}」の更新が辞退されました。記録は変更しません。", this);
     }
 
@@ -260,8 +254,7 @@ public class AllResultSceneController : MonoBehaviour
     {
         // 一度決定した結果を、連打や別のボタンから再度処理しない。
         hasRankingDecision = true;
-        submitButton.interactable = false;
-        declineButton.interactable = false;
+        rankingPanel.CompleteDecision();
     }
 
     private void ReturnToTitle()
@@ -272,130 +265,31 @@ public class AllResultSceneController : MonoBehaviour
         if (!hasRankingDecision) DeclineRanking();
         SceneManager.LoadScene(SceneNames.Title);
     }
-    // 表示用リストだけを上位5人に絞る。保存済みの6位以下の記録を削除する処理ではない。
+    // 読み込みはここで行い、上位5人の文字列生成はViewに任せる。
     private void RefreshRanking()
     {
-        System.Collections.Generic.List<RankingData> entries;
         try
         {
-            // サービスから順位順の一覧を取得し、上位5人に絞る。
-            entries = RankingService.GetRanking();
-            if (entries.Count > 5)
-            {
-                entries.RemoveRange(5, entries.Count - 5);
-            }
+            rankingPanel.ShowEntries(RankingService.GetRanking());
         }
         catch (System.Exception exception)
         {
             Debug.LogWarning($"ランキングの読み込みに失敗しました: {exception}");
-            rankingText.text = "ランキングデータを読み込めませんでした。";
-            return;
+            rankingPanel.ShowLoadError();
         }
-
-        if (entries.Count == 0)
-        {
-            rankingText.text = "まだ記録がありません";
-            return;
-        }
-
-        var builder = new StringBuilder();
-        for (int index = 0; index < entries.Count; index++)
-        {
-            var entry = entries[index];
-            builder.Append(index + 1).Append("位  ")
-                .Append(entry.userName).Append("    ")
-                .Append(entry.coin).Append(" コイン    ")
-                .Append(entry.round).Append(" ラウンド");
-            if (index < entries.Count - 1) builder.AppendLine();
-        }
-
-        rankingText.text = builder.ToString();
-        Debug.Log($"[Ranking/Result] 上位{entries.Count}人のランキングを表示しました。", this);
     }
 
-    //ランキングのパネルに関する仕組み
     private void CreateRankingPanel()
     {
-        Canvas canvas = FindAnyObjectByType<Canvas>();
+        Canvas canvas = endingText.GetComponentInParent<Canvas>();
         if (canvas == null)
         {
             Debug.LogError("AllResult シーンに Canvas がありません。ランキング更新の確認を表示できません。");
             return;
         }
-
-        rankingPanel = new GameObject("RankingRegistrationPanel", typeof(RectTransform), typeof(Image));
-        rankingPanel.transform.SetParent(canvas.transform, false);
-        rankingPanel.SetActive(false);
-        var panelRect = rankingPanel.GetComponent<RectTransform>();
-        panelRect.anchorMin = Vector2.zero;
-        panelRect.anchorMax = Vector2.one;
-        panelRect.offsetMin = Vector2.zero;
-        panelRect.offsetMax = Vector2.zero;
-        rankingPanel.GetComponent<Image>().color = new Color(0.06f, 0.07f, 0.12f, 0.94f);
-
-        CreateText(rankingPanel.transform, "Heading", "ランキング更新の確認", 32, 0, 205, 740, 46);
-
-        // 名前は入力欄ではなく、今回使用したプレイヤー名として表示する。
-        TMP_Text playerNameText = CreateText(rankingPanel.transform, "PlayerName",
-            string.IsNullOrWhiteSpace(rankingPlayerName) ? "プレイヤー名なし" : rankingPlayerName,
-            24, 0, 149, 740, 56);
-        playerNameText.richText = false;
-        playerNameText.enableAutoSizing = true;
-        playerNameText.fontSizeMin = 12;
-        playerNameText.fontSizeMax = 24;
-
-        CreateText(rankingPanel.transform, "Score", $"{finalCoin} コイン  /  到達 {finalRound} ラウンド", 25, 0, 100, 740, 40);
-        CreateText(rankingPanel.transform, "Question", "今回の結果で記録を更新しますか？", 24, 0, 57, 740, 40);
-
-        submitButton = CreateButton(rankingPanel.transform, "SubmitButton", "更新する", -155, 7, 270, 44, SubmitRanking);
-        declineButton = CreateButton(rankingPanel.transform, "DeclineButton", "更新しない", 155, 7, 270, 44, DeclineRanking);
-        feedbackText = CreateText(rankingPanel.transform, "Feedback", "自己ベストを上回る場合のみ更新します。", 19, 0, -43, 740, 48);
-
-        CreateText(rankingPanel.transform, "RankingHeading", "この端末のランキング  /  コイン優先・同点はラウンド順", 20, 0, -88, 740, 36);
-        rankingText = CreateText(rankingPanel.transform, "RankingEntries", "", 18, 0, -157, 740, 105);
-        rankingText.alignment = TextAlignmentOptions.TopLeft;
-        rankingText.richText = false;
-        CreateButton(rankingPanel.transform, "ReturnButton", "タイトルへ戻る", 0, -210, 250, 42, ReturnToTitle);
-
-        if (string.IsNullOrWhiteSpace(rankingPlayerName))
-        {
-            submitButton.interactable = false;
-            feedbackText.text = "プレイヤー名がありません。名前入力画面から開始してください。";
-        }
+        rankingPanel = new RankingResultPanel(canvas, endingText.font, rankingPlayerName, finalCoin, finalRound,
+            SubmitRanking, DeclineRanking, ReturnToTitle);
     }
-
-    private TMP_Text CreateText(Transform parent, string objectName, string value, int fontSize,
-        float x, float y, float width, float height)
-    {
-        var textObject = new GameObject(objectName, typeof(RectTransform), typeof(TextMeshProUGUI));
-        textObject.transform.SetParent(parent, false);
-        Place(textObject.GetComponent<RectTransform>(), x, y, width, height);
-
-        var textComponent = textObject.GetComponent<TextMeshProUGUI>();
-        textComponent.font = endingText.font;
-        textComponent.text = value;
-        textComponent.fontSize = fontSize;
-        textComponent.color = Color.white;
-        textComponent.alignment = TextAlignmentOptions.Center;
-        textComponent.raycastTarget = false;
-        return textComponent;
-    }
-
-    private Button CreateButton(Transform parent, string objectName, string label,
-        float x, float y, float width, float height, UnityEngine.Events.UnityAction action)
-    {
-        var buttonObject = new GameObject(objectName, typeof(RectTransform), typeof(Image), typeof(Button));
-        buttonObject.transform.SetParent(parent, false);
-        Place(buttonObject.GetComponent<RectTransform>(), x, y, width, height);
-        var image = buttonObject.GetComponent<Image>();
-        image.color = new Color(0.75f, 0.3f, 0.24f, 1f);
-        var button = buttonObject.GetComponent<Button>();
-        button.targetGraphic = image;
-        button.onClick.AddListener(action);
-        CreateText(buttonObject.transform, "Label", label, 23, 0, 0, width, height);
-        return button;
-    }
-
     private static void Place(RectTransform rect, float x, float y, float width, float height)
     {
         rect.anchorMin = new Vector2(0.5f, 0.5f);

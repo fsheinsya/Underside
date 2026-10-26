@@ -42,16 +42,18 @@ public static class BetOddsCalculator
     private static float CalculateMonsterScore(MonsterData self, MonsterData opponent)
     {
         float score = 0f;
+        bool adversity = PersonalityRules.ShouldActivateAdversity(self, opponent);
+        float statMultiplier = adversity ? PersonalityRules.AdversityStatMultiplier : 1f;
 
         // 基本能力値
         score += self.Stats.MaxHp * 0.2f;
-        score += self.Stats.Attack * 1.1f;
-        score += self.Stats.Defense * 0.9f;
-        score += self.Stats.Growth * 0.8f;
-        score += self.Stats.Speed * 1.2f;
-        score += self.Stats.Accuracy * 0.7f;
+        score += Mathf.RoundToInt(self.Stats.Attack * statMultiplier) * 0.7f;
+        score += Mathf.RoundToInt(self.Stats.Defense * statMultiplier) * 0.9f;
+        score += (adversity ? PersonalityRules.AdversityGrowthRate : self.Stats.Growth) * 0.5f;
+        score += Mathf.RoundToInt(self.Stats.Speed * statMultiplier) * 0.9f;
+        score += self.Stats.Accuracy * 0.9f;
         score += self.Stats.Evasion * 0.9f;
-        score += self.Stats.CriticalRate * 1.3f;
+        score += self.Stats.CriticalRate * 0.7f;
 
         // 属性相性ボーナス
         float elementBonus = GetElementBonus(self.Element, opponent.Element);
@@ -59,8 +61,6 @@ public static class BetOddsCalculator
 
         // 性格の強さを見積もる賭け倍率用の係数。実戦中の性格効果そのものは変更しない。
         score *= GetPersonalityBonus(self.Personality);
-        if (self.Personality == PersonalityType.Adversity && ElementCalculator.IsDisadvantaged(self.Element, opponent.Element))
-            score *= 2f;
 
         // スキル数が多いほど少し有利
         if (self.Skills != null)
@@ -91,13 +91,13 @@ public static class BetOddsCalculator
         switch (personality)
         {
             case PersonalityType.Bold: // 大胆：威力の高い技を優先するため、オッズ上の評価を高める。
-                return 1.5f;
+                return 1.4f;
             case PersonalityType.Calm: // 冷静：序盤の防御・回復を考慮し、少し高めに評価する。
                 return 1.2f;
             case PersonalityType.faith: // 信仰：相手の技に左右されるため、低めに評価する。
                 return 0.5f;
             case PersonalityType.Taunt: // 挑発：標準の強さとして扱う。
-                return 1.0f;
+                return 1.4f;
             case PersonalityType.Aggressive: // 挑戦：成功率の低い技を優先するため、かなり低く評価する。
                 return 0.1f;
             case PersonalityType.Timid: // 臆病：回復などを考慮し、やや低めに評価する。
@@ -106,20 +106,20 @@ public static class BetOddsCalculator
                 return 0.000012f;
             case PersonalityType.Inept: // 無能：覚醒前の戦いにくさを考慮し、低めに評価する。
                 return 0.2f;
-            case PersonalityType.Stoic: // 克己：被弾するほど能力が上がるため、高めに評価する。
-                return 1.25f;
+            case PersonalityType.Stoic: // 克己：被弾するほど攻撃・防御・素早さが上がるため、高めに評価する。
+                return 1.1f;
             case PersonalityType.Explorer: // 探求：発掘効果にばらつきがあるため、少し低めに評価する。
-                return 0.85f;
+                return 0.9f;
             case PersonalityType.Devoted: // 献身：大ダメージを狙えるがHP1になるため、少し高めに評価する。
                 return 1.5f;
             case PersonalityType.Adversity: // 逆境：相性で強化される場合を含め、標準評価にする。
-                return 1f;
+                return 0.7f;
             case PersonalityType.Unyielding: // 不屈：致死攻撃を耐えるため、高めに評価する。
                 return 1.3f;
             case PersonalityType.Impatient: // 短気：攻撃する確率が限られるため、低めに評価する。
-                return 0.65f;
+                return 0.9f;
             case PersonalityType.Headlong: // 猛進：攻撃・妨害・防御を切り替えるため、少し高めに評価する。
-                return 1.1f;
+                return 1.4f;
             case PersonalityType.Obsessive: // 執念：状態異常中などの攻撃力上昇を考慮し、少し高めに評価する。
                 return 1.1f;
             case PersonalityType.Sincere: // 誠実：強化後に魔法を使うため、少し低めに評価する。
@@ -127,9 +127,9 @@ public static class BetOddsCalculator
             case PersonalityType.Insidious: // 陰湿：弱体化を重ねる効果を考慮し、高めに評価する。
                 return 1.15f;
             case PersonalityType.Adaptive: // 適応：スタンの成功率低下と物理・魔法・毒ダメージ軽減を考慮し、高めに評価する。
-                return 1.2f;
+                return 1.3f;
             case PersonalityType.Flexible: // 柔軟：弱めのコピー技とコピー制限を考慮し、標準評価にする。
-                return 1f;
+                return 0.8f;
             default: // 未定義の性格は基準値で扱う。
                 return 1.0f;
         }

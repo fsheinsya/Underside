@@ -25,6 +25,7 @@ public class BattleLogEntry
 
     public bool IsAction;   // 行動ログかどうか。
     public bool PlayMotion; // 行動ログに合わせてキャラクターモーションを再生するか。
+    public bool TargetTookDamage; // 技の実行で相手のHPが実際に減った場合だけ被弾演出を再生する。
 
     // このログで実際に付与された状態。付与がなければ None。
     public StatusAilmentType AppliedStatus;

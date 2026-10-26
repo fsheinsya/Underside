@@ -44,7 +44,7 @@ public class BattleLogger
         });
     }
 
-    public void AddAction(
+    public BattleLogEntry AddAction(
         string message,
         MonsterData left,
         MonsterData right,
@@ -53,7 +53,7 @@ public class BattleLogger
         bool playMotion)
     {
         // 行動者・技種別・モーション有無を残し、画面側でログと動きを同期させる。
-        Logs.Add(new BattleLogEntry
+        var entry = new BattleLogEntry
         {
             Message = message,
             LeftHp = left.CurrentHp,
@@ -66,6 +66,8 @@ public class BattleLogger
             IsLeftAction = isLeftAction,
             IsAction = true,
             PlayMotion = playMotion
-        });
+        };
+        Logs.Add(entry);
+        return entry;
     }
 }

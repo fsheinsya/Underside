@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using TMPro;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -50,3 +51,4 @@ public static class AssignMissingTMP
         return Selection.activeObject is TMP_FontAsset;
     }
 }
+#endif

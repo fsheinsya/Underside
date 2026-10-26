@@ -24,8 +24,12 @@ public static class PersonalityImplementationChecks
             CheckAttackBalance();
             CheckGrassWaterDirection();
             CheckTraits();
+            CheckAdditionalDamageAdaptation();
+            CheckAdaptationLogs();
             CheckSkills();
             FaithPrayerChecks.Run();
+            BattleStatChecks.Run();
+            ImpatientChargeChecks.Run();
             CheckGenerationAndMatches();
             BattleTurnEventChecks.Run();
             Debug.Log($"PERSONALITY_CHECKS_PASSED: {assertions} assertions; 400 personality matchups; 5 elements.");
@@ -141,12 +145,14 @@ public static class PersonalityImplementationChecks
         Assert(attacker.CurrentHp == 1 && attacker.EndureCount == 1, "unyielding survives lethal recoil");
         attacker = Monster(PersonalityType.Stoic);
         Executor.Execute(attacker, defender, strong, logger, attacker, defender);
-        Assert(attacker.DamageTakenCount == 1 && attacker.GetCurrentAttack() == 22, "stoic grows after surviving recoil");
+        Assert(attacker.DamageTakenCount == 1 && attacker.GetCurrentAttack() == 22
+            && attacker.GetCurrentDefense() == 11 && attacker.GetCurrentSpeed() == 11
+            && attacker.CurrentHp == 95 && attacker.GetCurrentMaxHp() == 100, "stoic grows three stats after surviving recoil");
         attacker = Monster(PersonalityType.Adaptive);
         attacker.PhysicalAdaptation = 100;
         Executor.Execute(attacker, defender, strong, logger, attacker, defender);
-        Assert(attacker.CurrentHp == 95 && attacker.PhysicalAdaptation == 100,
-            "recoil bypasses physical adaptation and grants no adaptation");
+        Assert(attacker.CurrentHp == 95 && attacker.PhysicalAdaptation == 100 && attacker.RecoilAdaptation == 10,
+            "recoil uses its own adaptation rather than physical adaptation");
 
         attacker = Monster();
         attacker.IsSkillLocked = true;
@@ -186,17 +192,9 @@ public static class PersonalityImplementationChecks
         PersonalityRules.BeginTurn(inept, foe, 11, logger, inept, foe);
         Assert(inept.CurrentHp == 200, "awakening happens once");
 
-        var adversity = Monster(PersonalityType.Adversity);
-        PersonalityRules.Refresh(adversity, foe, logger, adversity, foe);
-        Assert(adversity.GetCurrentMaxHp() == 200 && adversity.GetCurrentAttack() == 40 && adversity.Stats.MaxHp == 100, "adversity doubles without mutating base stats");
-        PersonalityRules.Refresh(adversity, foe, logger, adversity, foe);
-        Assert(adversity.GetCurrentAttack() == 40, "adversity does not stack");
+        CheckAdversity();
 
-        var stoic = Monster(PersonalityType.Stoic);
-        PersonalityRules.TakeDamage(stoic, foe, 10, logger, stoic, foe);
-        Assert(stoic.DamageTakenCount == 1 && stoic.GetCurrentAttack() == 22 && stoic.GetCurrentMaxHp() == 110, "stoic growth after damage");
-        PersonalityRules.TakeDamage(stoic, foe, 0, logger, stoic, foe);
-        Assert(stoic.DamageTakenCount == 1, "zero damage grants no growth");
+        CheckStoic();
 
         CheckObsession();
 
@@ -222,9 +220,182 @@ public static class PersonalityImplementationChecks
         CheckAdaptation();
     }
 
+    private static void CheckAdversity()
+    {
+        for (int selfElement = 0; selfElement < 5; selfElement++)
+        for (int opponentElement = 0; opponentElement < 5; opponentElement++)
+        {
+            var monster = Monster(PersonalityType.Adversity, (ElementType)selfElement);
+            var foe = Monster(element: (ElementType)opponentElement);
+            monster.Stats.Growth = 25;
+            monster.Stats.Accuracy = 20;
+            monster.Stats.Evasion = 15;
+            monster.Stats.CriticalRate = 10;
+            monster.CurrentHp = 37;
+            var logger = new BattleLogger();
+            bool active = ElementCalculator.IsDisadvantaged(monster.Element, foe.Element);
+            PersonalityRules.Refresh(monster, foe, logger, monster, foe);
+            Assert(monster.AdversityActive == active && monster.PersonalityMultiplier == 1f,
+                "adversity follows all elemental matchups without a global multiplier");
+            Assert(monster.CurrentHp == 37 && monster.GetCurrentMaxHp() == 100,
+                "activating adversity preserves current and maximum HP");
+            Assert(monster.GetCurrentAttack() == (active ? 24 : 20)
+                && monster.GetCurrentDefense() == (active ? 12 : 10)
+                && monster.GetCurrentSpeed() == (active ? 12 : 10),
+                "adversity multiplies only attack, defense and speed by 1.2");
+            Assert(monster.GetCurrentGrowth() == (active ? 100 : 25)
+                && monster.GetCurrentAccuracy() == 20 && monster.GetCurrentEvasion() == 15
+                && monster.GetCurrentCriticalRate() == 10, "adversity fixes growth at 100 and preserves accuracy, evasion and critical");
+            Assert(monster.Stats.MaxHp == 100 && monster.Stats.Attack == 20 && monster.Stats.Defense == 10
+                && monster.Stats.Speed == 10 && monster.Stats.Growth == 25, "adversity does not mutate base stats");
+            PersonalityRules.Refresh(monster, foe, logger, monster, foe);
+            Assert(logger.Logs.Count == (active ? 1 : 0) && monster.GetCurrentAttack() == (active ? 24 : 20),
+                "refresh neither stacks adversity nor repeats its activation log");
+            if (active)
+            {
+                Assert(logger.Logs[0].Message == "逆境 の逆境が発動！攻撃・防御・素早さ1.2倍、成長率100%！"
+                    && logger.Logs[0].LeftHp == 37, "adversity log describes the new effect with unchanged HP");
+                monster.AttackBuff = 3;
+                monster.DefenseBuff = 4;
+                monster.GrowthAttackBonus = monster.GrowthDefenseBonus = monster.GrowthSpeedBonus = 5;
+                Assert(monster.GetCurrentAttack() == 32 && monster.GetCurrentDefense() == 21 && monster.GetCurrentSpeed() == 17,
+                    "additive buffs and growth are added after the adversity multiplier");
+                // 成長率が元は0でも、逆境中は毎回成長する。
+                monster.Stats.Growth = 0;
+                for (int turn = 1; turn <= 10; turn++)
+                {
+                    int before = monster.GrowthAttackBonus + monster.GrowthDefenseBonus + monster.GrowthSpeedBonus
+                        + monster.GrowthAccuracyBonus + monster.GrowthEvasionBonus;
+                    BattleStatRules.ApplyEndTurnGrowth(monster, turn);
+                    int after = monster.GrowthAttackBonus + monster.GrowthDefenseBonus + monster.GrowthSpeedBonus
+                        + monster.GrowthAccuracyBonus + monster.GrowthEvasionBonus;
+                    Assert(after > before, "active adversity guarantees an end-turn growth roll");
+                }
+            }
+            foe.Element = monster.Element;
+            PersonalityRules.Refresh(monster, foe, logger, monster, foe);
+            Assert(!monster.AdversityActive && monster.GetCurrentGrowth() == monster.Stats.Growth
+                && monster.CurrentHp == 37 && monster.GetCurrentMaxHp() == 100,
+                "losing elemental disadvantage removes adversity without changing HP");
+            foe.Element = (ElementType)opponentElement;
+            PersonalityRules.Refresh(monster, foe, logger, monster, foe);
+            PersonalityRules.Reset(monster);
+            Assert(!monster.AdversityActive && monster.GetCurrentAttack() == 20
+                && monster.GetCurrentDefense() == 10 && monster.GetCurrentSpeed() == 10,
+                "a new match resets adversity and temporary bonuses");
+        }
+
+        var priced = Monster(PersonalityType.Adversity);
+        var opponent = Monster(element: ElementType.Water);
+        // 基本値はHP100、攻撃20、防御10、素早さ10、命中80、他0、技数2。
+        float activeScore = (20f + 24f * .7f + 12f * .9f + 100f * .5f + 12f * .9f + 80f * .9f)
+            * Mathf.Sqrt(.75f / 1.5f) + 16f;
+        float opponentScore = (20f + 20f * .7f + 10f * .9f + 10f * .9f + 80f * .9f)
+            * Mathf.Sqrt(1.5f / .75f) * 1.4f + 16f;
+        float payout = BetOddsCalculator.CalculatePayoutMultiplier(priced, opponent, PredictionSide.Left);
+        Assert(Mathf.Abs(payout - (1f + opponentScore / activeScore)) < .0001f,
+            "odds value the new individual adversity bonuses instead of doubling the whole score");
+        PersonalityRules.Refresh(priced, opponent, new BattleLogger(), priced, opponent);
+        Assert(BetOddsCalculator.CalculatePayoutMultiplier(priced, opponent, PredictionSide.Left) == payout,
+            "adversity odds are independent of whether battle state has been initialized");
+    }
+
+    private static void CheckStoic()
+    {
+        var stoic = Monster(PersonalityType.Stoic);
+        var foe = Monster();
+        var logger = new BattleLogger();
+        stoic.Stats.Growth = 7;
+        stoic.Stats.Evasion = 12;
+        stoic.Stats.CriticalRate = 15;
+        stoic.Stats.MaxHp = stoic.CurrentHp = 1000;
+        for (int hit = 1; hit <= 10; hit++)
+        {
+            Assert(PersonalityRules.TakeDamage(stoic, foe, 10, logger, stoic, foe) == 10, "stoic reports actual HP loss");
+            Assert(stoic.GetCurrentAttack() == 20 + 2 * hit && stoic.GetCurrentDefense() == 10 + hit
+                && stoic.GetCurrentSpeed() == 10 + hit && stoic.DamageTakenCount == hit,
+                "stoic adds one tenth of base attack, defense and speed per hit, without compounding");
+            Assert(logger.Logs.Count == hit && logger.Logs[hit - 1].Message == "ダメージを乗り越えて強くなった！",
+                "each surviving hit emits the requested growth message exactly once");
+            Assert(stoic.CurrentHp == 1000 - 10 * hit && stoic.GetCurrentMaxHp() == 1000
+                && stoic.GetCurrentGrowth() == 7 && stoic.GetCurrentAccuracy() == 80
+                && stoic.GetCurrentEvasion() == 12 && stoic.GetCurrentCriticalRate() == 15,
+                "stoic leaves HP, growth, accuracy, evasion and critical rate unchanged");
+        }
+        stoic.AttackBuff = 5;
+        stoic.DefenseBuff = -3;
+        PersonalityRules.Refresh(stoic, foe, logger, stoic, foe);
+        Assert(stoic.GetCurrentAttack() == 45 && stoic.GetCurrentDefense() == 17 && stoic.GetCurrentSpeed() == 20
+            && stoic.Stats.Attack == 20 && stoic.Stats.Defense == 10 && stoic.Stats.Speed == 10
+            && stoic.PersonalityMultiplier == 1f && logger.Logs.Count == 10,
+            "refresh does not stack growth or multiply additive buffs or mutate base stats");
+        PersonalityRules.TakeDamage(stoic, foe, 0, logger, stoic, foe);
+        Assert(stoic.DamageTakenCount == 10 && stoic.GetCurrentAttack() == 45 && logger.Logs.Count == 10, "zero damage grants no growth or log");
+        PersonalityRules.TakeDamage(stoic, foe, 10, logger, stoic, foe, poison: true);
+        Assert(stoic.DamageTakenCount == 11 && stoic.GetCurrentAttack() == 47 && stoic.GetCurrentDefense() == 18
+            && stoic.GetCurrentSpeed() == 21 && stoic.CurrentHp == 890 && logger.Logs.Count == 11,
+            "poison increases the three stats after HP loss");
+        PersonalityRules.TakeDamage(stoic, foe, 1000, logger, stoic, foe);
+        PersonalityRules.TakeDamage(stoic, foe, 10, logger, stoic, foe);
+        Assert(stoic.CurrentHp == 0 && stoic.DamageTakenCount == 11 && logger.Logs.Count == 11, "lethal and postmortem damage grant no growth or log");
+        PersonalityRules.Reset(stoic);
+        Assert(stoic.GetCurrentAttack() == 20 && stoic.CurrentHp == 1000 && stoic.DamageTakenCount == 0
+            && stoic.GetCurrentDefense() == 10 && stoic.GetCurrentSpeed() == 10
+            && stoic.StoicStatMultiplier == 1f && stoic.PersonalityAttackMultiplier == 1f, "new match resets all three stoic stats");
+    }
+
+    // 受ける側の5属性×魔法5属性。使用者と魔法の属性を変え、コピー時も技属性で判定する。
+    private static void CheckMagicAdaptationAffinity()
+    {
+        var expectedGrowth = new int[,]
+        {
+            {10, 5, 20, 10, 10}, {20, 10, 5, 10, 10}, {5, 20, 10, 10, 10},
+            {10, 10, 10, 10, 5}, {10, 10, 10, 5, 10}
+        };
+        var logger = new BattleLogger();
+        for (int defenderElement = 0; defenderElement < 5; defenderElement++)
+        for (int spellElement = 0; spellElement < 5; spellElement++)
+        {
+            var adaptive = Monster(PersonalityType.Adaptive, (ElementType)defenderElement);
+            var baseline = Monster(element: (ElementType)defenderElement);
+            var caster = Monster(element: (ElementType)((spellElement + 1) % 5));
+            adaptive.Stats.MaxHp = adaptive.CurrentHp = baseline.Stats.MaxHp = baseline.CurrentHp = 1000;
+            var magic = MonsterFactory.CreateElementSkill((ElementType)spellElement);
+            magic.SuccessRate = 100;
+            int growth = expectedGrowth[defenderElement, spellElement];
+            Random.InitState(20261021);
+            Executor.Execute(caster, baseline, magic, logger, caster, baseline);
+            int baseDamage = 1000 - baseline.CurrentHp;
+            Random.InitState(20261021);
+            Executor.Execute(caster, adaptive, magic, logger, caster, adaptive);
+            Assert(adaptive.MagicAdaptation == growth && adaptive.CurrentHp == baseline.CurrentHp,
+                $"magic growth uses defender affinity only after damage: {defenderElement}/{spellElement}");
+            int hp = adaptive.CurrentHp;
+            Random.InitState(20261021);
+            Executor.Execute(caster, adaptive, magic, logger, caster, adaptive);
+            Assert(hp - adaptive.CurrentHp == Mathf.Max(1, Mathf.RoundToInt(baseDamage * (1f - growth / 100f)))
+                && adaptive.MagicAdaptation == growth * 2, "new resistance applies from the next magic hit");
+            adaptive.MagicAdaptation = 97;
+            Executor.Execute(caster, adaptive, magic, logger, caster, adaptive);
+            Assert(adaptive.MagicAdaptation == 100, "every affinity caps at 100");
+            hp = adaptive.CurrentHp;
+            Executor.Execute(caster, adaptive, magic, logger, caster, adaptive);
+            Assert(adaptive.CurrentHp == hp && adaptive.MagicAdaptation == 100, "full magic adaptation prevents damage");
+            adaptive.MagicAdaptation = 0;
+            adaptive.IsInvincible = true;
+            Executor.Execute(caster, adaptive, magic, logger, caster, adaptive);
+            Assert(adaptive.CurrentHp == hp && adaptive.MagicAdaptation == 0, "invincible magic hit grants no adaptation");
+            adaptive.IsInvincible = false;
+            adaptive.CurrentHp = 1;
+            Executor.Execute(caster, adaptive, magic, logger, caster, adaptive);
+            Assert(adaptive.CurrentHp == 0 && adaptive.MagicAdaptation == 0, "lethal magic grants no adaptation");
+        }
+    }
+
     // 実際の技実行で、命中・失敗・無敵・種類別蓄積とターン経過を確認する。
     private static void CheckAdaptation()
     {
+        CheckMagicAdaptationAffinity();
         CheckAttackAdaptationDamage();
         var adaptive = Monster(PersonalityType.Adaptive);
         adaptive.Stats.MaxHp = adaptive.CurrentHp = 1000;
@@ -253,13 +424,13 @@ public static class PersonalityImplementationChecks
         Assert(adaptive.PhysicalAdaptation == 16, "strong hit adds ten to shared physical adaptation");
         SetNextSuccessRoll(.1f, .2f);
         Executor.Execute(foe, adaptive, magic, logger, foe, adaptive);
-        Assert(adaptive.MagicAdaptation == 20 && adaptive.PhysicalAdaptation == 16, "magic hit changes only magic adaptation");
+        Assert(adaptive.MagicAdaptation == 5 && adaptive.PhysicalAdaptation == 16, "magic hit changes only magic adaptation");
         hp = adaptive.CurrentHp;
         SetNextSuccessRoll(.95f, .99f);
         Executor.Execute(foe, adaptive, magic, logger, foe, adaptive);
-        Assert(adaptive.CurrentHp == hp && adaptive.MagicAdaptation == 20, "failed magic adds no adaptation");
-        Assert(PersonalityRules.GetAttackResistance(adaptive, SkillType.FireMagic) == .2f
-            && PersonalityRules.GetAttackResistance(adaptive, SkillType.DarkMagic) == .2f, "all five magic elements share magic damage resistance");
+        Assert(adaptive.CurrentHp == hp && adaptive.MagicAdaptation == 5, "failed magic adds no adaptation");
+        Assert(PersonalityRules.GetAttackResistance(adaptive, SkillType.FireMagic) == .05f
+            && PersonalityRules.GetAttackResistance(adaptive, SkillType.DarkMagic) == .05f, "all five magic elements share magic damage resistance");
         Assert(normal.SuccessRate == 100 && strong.SuccessRate == 65 && magic.SuccessRate == 90, "adaptation does not mutate shared skill definitions");
 
         // 無敵でダメージを防いだ場合は、新しい種類の学習を開始しない。
@@ -302,7 +473,7 @@ public static class PersonalityImplementationChecks
             "poison adaptation is isolated from other resistances");
         PersonalityRules.TakeDamage(adaptive, foe, 10, logger, adaptive, foe, poison: true);
         PersonalityRules.BeginTurn(adaptive, foe, 12, logger, adaptive, foe);
-        Assert(adaptive.PhysicalAdaptation == 17 && adaptive.MagicAdaptation == 21
+        Assert(adaptive.PhysicalAdaptation == 17 && adaptive.MagicAdaptation == 6
             && adaptive.PoisonAdaptation == 11 && adaptive.StunAdaptation == 21, "each experienced category grows by one per turn");
         Assert(PersonalityRules.TakeDamage(adaptive, foe, 20, logger, adaptive, foe) == 20, "untyped damage is not reduced by physical adaptation");
         PersonalityRules.BeginTurn(adaptive, foe, 200, logger, adaptive, foe);
@@ -322,6 +493,303 @@ public static class PersonalityImplementationChecks
         Assert(adaptive.CurrentHp == 1000 && adaptive.DamageTakenCount == 0 && adaptive.PhysicalAdaptation == 0
             && adaptive.MagicAdaptation == 0 && adaptive.PoisonAdaptation == 0 && adaptive.StunAdaptation == 0,
             "reset forgets all learned categories and their passive growth");
+    }
+
+    private static MonsterData DamageTestMonster(PersonalityType personality = PersonalityType.Adaptive)
+    {
+        var monster = Monster(personality);
+        monster.Stats.MaxHp = monster.CurrentHp = 10000;
+        return monster;
+    }
+
+    private static void SetAllAdaptation(MonsterData monster, int value)
+    {
+        monster.PhysicalAdaptation = monster.MagicAdaptation = monster.PoisonAdaptation = monster.StunAdaptation = value;
+        monster.ExplosionAdaptation = monster.RecoilAdaptation = value;
+    }
+
+    private static int AdditionalAdaptation(MonsterData monster, DamageSource source)
+    {
+        return source == DamageSource.Explosion ? monster.ExplosionAdaptation
+            : monster.RecoilAdaptation;
+    }
+
+    private static void CheckAdditionalDamageAdaptation()
+    {
+        var foe = Monster();
+        var logger = new BattleLogger();
+        foreach (var source in new[] { DamageSource.Explosion, DamageSource.Recoil })
+        {
+            var adaptive = DamageTestMonster();
+            PersonalityRules.BeginTurn(adaptive, foe, 1, logger, adaptive, foe);
+            for (int hit = 0; hit < 10; hit++)
+            {
+                int actual = PersonalityRules.TakeDamage(adaptive, foe, 100, logger, adaptive, foe, damageSource: source);
+                Assert(actual == 100 - hit * 10 && AdditionalAdaptation(adaptive, source) == (hit + 1) * 10,
+                    "special damage learns ten points after each surviving hit: " + source);
+            }
+            int count = adaptive.DamageTakenCount;
+            Assert(PersonalityRules.TakeDamage(adaptive, foe, 100, logger, adaptive, foe, damageSource: source) == 0
+                && adaptive.DamageTakenCount == count, "fully adapted damage grants no extra hit");
+            Assert(adaptive.PhysicalAdaptation == 0 && adaptive.MagicAdaptation == 0 && adaptive.PoisonAdaptation == 0
+                && adaptive.StunAdaptation == 0 && adaptive.ExplosionAdaptation + adaptive.RecoilAdaptation == 100, "special damage categories are independent");
+            PersonalityRules.Reset(adaptive);
+            Assert(adaptive.ExplosionAdaptation + adaptive.RecoilAdaptation == 0,
+                "new match resets all special adaptation");
+            PersonalityRules.BeginTurn(adaptive, foe, 1, logger, adaptive, foe);
+            PersonalityRules.TakeDamage(adaptive, foe, 1, logger, adaptive, foe, damageSource: source);
+            PersonalityRules.BeginTurn(adaptive, foe, 2, logger, adaptive, foe);
+            PersonalityRules.BeginTurn(adaptive, foe, 2, logger, adaptive, foe);
+            Assert(AdditionalAdaptation(adaptive, source) == 11, "experienced special type grows once per turn");
+            PersonalityRules.BeginTurn(adaptive, foe, 500, logger, adaptive, foe);
+            Assert(AdditionalAdaptation(adaptive, source) == 100, "passive special adaptation caps at 100");
+            PersonalityRules.Reset(adaptive);
+            PersonalityRules.TakeDamage(adaptive, foe, 0, logger, adaptive, foe, damageSource: source);
+            adaptive.CurrentHp = 1;
+            PersonalityRules.TakeDamage(adaptive, foe, 100, logger, adaptive, foe, damageSource: source);
+            Assert(adaptive.CurrentHp == 0 && AdditionalAdaptation(adaptive, source) == 0,
+                "zero and lethal special damage teach nothing");
+            var ordinary = DamageTestMonster(PersonalityType.Bold);
+            SetAllAdaptation(ordinary, 100);
+            Assert(PersonalityRules.TakeDamage(ordinary, foe, 100, logger, ordinary, foe, damageSource: source) == 100,
+                "non-adaptive personality cannot use stored resistances");
+        }
+
+        foreach (var source in new[] { DamageSource.Punishment, DamageSource.Miracle, DamageSource.TurnEvent })
+        foreach (int resistance in new[] { 0, 50, 100 })
+        {
+            var adaptive = DamageTestMonster();
+            SetAllAdaptation(adaptive, resistance);
+            Assert(PersonalityRules.TakeDamage(adaptive, foe, 40, logger, adaptive, foe, damageSource: source) == 40,
+                "excluded sources ignore every resistance");
+            Assert(adaptive.PhysicalAdaptation == resistance && adaptive.MagicAdaptation == resistance
+                && adaptive.ExplosionAdaptation == resistance && adaptive.RecoilAdaptation == resistance, "excluded source grants no adaptation");
+        }
+        var deathTarget = DamageTestMonster();
+        SetAllAdaptation(deathTarget, 100);
+        Executor.Execute(foe, deathTarget, new SkillData { SkillType = SkillType.InstantDeath, SuccessRate = 100 }, logger, foe, deathTarget);
+        Assert(deathTarget.CurrentHp == 0, "instant death bypasses even complete adaptation");
+
+        var recoilTarget = Monster(PersonalityType.Adaptive);
+        recoilTarget.Stats.Attack = 100;
+        recoilTarget.RecoilAdaptation = 50;
+        var failedStrong = MonsterFactory.CreateStrongAttack();
+        failedStrong.SuccessRate = 0;
+        Executor.Execute(recoilTarget, foe, failedStrong, logger, recoilTarget, foe);
+        Assert(recoilTarget.CurrentHp == 100 - Mathf.RoundToInt(25 * .5f) && recoilTarget.RecoilAdaptation == 60,
+            "actual failed strong attack reduces recoil and learns exactly once");
+
+        var comboTarget = DamageTestMonster();
+        comboTarget.StatusAilment = StatusAilmentType.Poison;
+        comboTarget.DefenseBuff = -10;
+        comboTarget.IsSkillLocked = true;
+        comboTarget.PhysicalAdaptation = 50;
+        var combo = new SkillData { SkillType = SkillType.DebuffCombo, SuccessRate = 100 };
+        Random.InitState(20261022);
+        int comboBase = new DamageCalculator().CalculateDamage(foe, comboTarget, 0, foe.Element, SkillType.DebuffCombo);
+        Random.InitState(20261022);
+        Executor.Execute(foe, comboTarget, combo, logger, foe, comboTarget);
+        Assert(10000 - comboTarget.CurrentHp == Mathf.RoundToInt(comboBase * .5f) && comboTarget.PhysicalAdaptation == 60,
+            "combo's damage stage uses and learns physical adaptation");
+
+        CheckExplosionAdaptation();
+        CheckAllOutAdaptation();
+        int eventHits = 0;
+        for (int seed = 0; seed < 100; seed++)
+        {
+            var left = DamageTestMonster();
+            var right = DamageTestMonster();
+            SetAllAdaptation(left, 100);
+            SetAllAdaptation(right, 100);
+            Random.InitState(seed);
+            BattleTurnEvents.Apply(left, right, new BattleLogger(), 1, false);
+            int loss = 20000 - left.CurrentHp - right.CurrentHp;
+            Assert(loss == 0 || new[] { 5, 10, 30, 50 }.Contains(loss), "late battle events keep full fixed damage");
+            if (loss > 0) eventHits++;
+        }
+        Assert(eventHits > 0, "actual excluded damage events exercised");
+    }
+
+    private static void CheckExplosionAdaptation()
+    {
+        var dig = new SkillData { SkillType = SkillType.Dig, SuccessRate = 100 };
+        int explosionSeed = -1;
+        int baseTargetDamage = 0, baseSelfDamage = 0;
+        for (int seed = 0; seed < 1000; seed++)
+        {
+            var actor = DamageTestMonster();
+            var target = DamageTestMonster();
+            Random.InitState(seed);
+            Executor.Execute(actor, target, dig, new BattleLogger(), actor, target);
+            if (actor.ExplosionAdaptation != 10 || target.ExplosionAdaptation != 10) continue;
+            explosionSeed = seed;
+            baseTargetDamage = 10000 - target.CurrentHp;
+            baseSelfDamage = 10000 - actor.CurrentHp;
+            break;
+        }
+        Assert(explosionSeed >= 0 && baseTargetDamage > 0 && baseSelfDamage > 0, "actual explosion and self-blast both learn ten");
+        var adaptedActor = DamageTestMonster();
+        var adaptedTarget = DamageTestMonster();
+        SetAllAdaptation(adaptedActor, 100);
+        SetAllAdaptation(adaptedTarget, 100);
+        adaptedActor.ExplosionAdaptation = adaptedTarget.ExplosionAdaptation = 50;
+        Random.InitState(explosionSeed);
+        Executor.Execute(adaptedActor, adaptedTarget, dig, new BattleLogger(), adaptedActor, adaptedTarget);
+        Assert(10000 - adaptedTarget.CurrentHp == Mathf.RoundToInt(baseTargetDamage * .5f)
+            && 10000 - adaptedActor.CurrentHp == Mathf.RoundToInt(baseSelfDamage * .5f)
+            && adaptedActor.ExplosionAdaptation == 60 && adaptedTarget.ExplosionAdaptation == 60,
+            "explosion and self-blast use only explosion resistance and grow once");
+        adaptedActor = DamageTestMonster();
+        adaptedTarget = DamageTestMonster();
+        adaptedActor.IsInvincible = adaptedTarget.IsInvincible = true;
+        Random.InitState(explosionSeed);
+        Executor.Execute(adaptedActor, adaptedTarget, dig, new BattleLogger(), adaptedActor, adaptedTarget);
+        Assert(adaptedActor.CurrentHp == 10000 && adaptedTarget.CurrentHp == 10000
+            && adaptedActor.ExplosionAdaptation == 0 && adaptedTarget.ExplosionAdaptation == 0,
+            "invincibility prevents explosion damage and learning");
+    }
+
+    private static void CheckAllOutAdaptation()
+    {
+        var skill = new SkillData { SkillType = SkillType.AllOutAttack, SuccessRate = 100 };
+        var actor = Monster();
+        var target = DamageTestMonster();
+        var logger = new BattleLogger();
+        Executor.Execute(actor, target, skill, logger, actor, target);
+        Assert(target.CurrentHp > 0 && target.CurrentHp < 10000 && target.PhysicalAdaptation == 100
+            && target.MagicAdaptation == 100 && actor.CurrentHp == 1,
+            "surviving all-out damage completes both defenses while attacker pays HP cost");
+        Assert(target.ExplosionAdaptation == 0 && target.RecoilAdaptation == 0,
+            "all-out survival completes only physical and magic adaptation");
+        int hp = target.CurrentHp;
+        Executor.Execute(actor, target, MonsterFactory.CreateNormalAttack(), logger, actor, target);
+        var magic = MonsterFactory.CreateElementSkill(ElementType.Water);
+        magic.SuccessRate = 100;
+        Executor.Execute(actor, target, magic, logger, actor, target);
+        Assert(target.CurrentHp == hp, "after surviving all-out, physical and magic attacks deal zero");
+        foreach (int scenario in new[] { 0, 1, 2 })
+        {
+            actor = Monster();
+            target = DamageTestMonster();
+            skill.SuccessRate = scenario == 0 ? 0 : 100;
+            target.IsInvincible = scenario == 1;
+            if (scenario == 2) target.CurrentHp = 1;
+            Executor.Execute(actor, target, skill, logger, actor, target);
+            Assert(target.PhysicalAdaptation == 0 && target.MagicAdaptation == 0,
+                "failed, invincible and lethal all-out attacks do not teach adaptation");
+        }
+    }
+
+    private static void CheckAdaptationLogs()
+    {
+        var foe = Monster();
+        var gains = new Action<MonsterData, BattleLogger>[]
+        {
+            (m, log) => PersonalityRules.OnAttackHit(m, SkillType.NormalAttack, ElementType.Fire, log, m, foe),
+            (m, log) => PersonalityRules.OnAttackHit(m, SkillType.FireMagic, ElementType.Fire, log, m, foe),
+            (m, log) => PersonalityRules.TakeDamage(m, foe, 100, log, m, foe, poison: true),
+            (m, log) => PersonalityRules.OnStunApplied(m, log, m, foe),
+            (m, log) => PersonalityRules.TakeDamage(m, foe, 100, log, m, foe, damageSource: DamageSource.Explosion),
+            (m, log) => PersonalityRules.TakeDamage(m, foe, 100, log, m, foe, damageSource: DamageSource.Recoil)
+        };
+        var categories = new[] { "物理攻撃", "魔法攻撃", "毒", "スタン", "爆破", "反動" };
+        var expectedMessages = categories.Select(x => $"{x}の適応が完了した！次からの{x}は無効化される！").ToArray();
+        for (int kind = 0; kind < gains.Length; kind++)
+        {
+            var gain = gains[kind];
+            var adaptive = DamageTestMonster();
+            adaptive.Name = "検証スライム";
+            var logger = new BattleLogger();
+            gain(adaptive, logger);
+            Assert(logger.Logs.Count == 1
+                && logger.Logs[0].Message == $"{categories[kind]}の適応が始まった...",
+                "first gain announces the start of adaptation for its category");
+            Assert(!logger.Logs[0].IsAction && !logger.Logs[0].PlayMotion
+                && logger.Logs[0].LeftHp == adaptive.CurrentHp && logger.Logs[0].RightHp == foe.CurrentHp,
+                "adaptation progress preserves HP snapshots without replaying an attack");
+            gain(adaptive, logger);
+            Assert(logger.Logs.Count == 2 && logger.Logs[1].Message == $"{categories[kind]}の適応がすすんだ！",
+                "later hits announce progress instead of repeating the start message");
+            SetAllAdaptation(adaptive, 99);
+            gain(adaptive, logger);
+            Assert(logger.Logs.Count == 3 && logger.Logs[2].Message == expectedMessages[kind],
+                "each resistance uses its exact category completion message");
+            gain(adaptive, logger);
+            Assert(logger.Logs.Count == 3, "already complete resistance does not repeat its message");
+        }
+
+        var passive = DamageTestMonster();
+        passive.Name = "成長スライム";
+        var passiveLog = new BattleLogger();
+        SetAllAdaptation(passive, 98);
+        PersonalityRules.BeginTurn(passive, foe, 1, passiveLog, passive, foe);
+        Assert(passiveLog.Logs.Select(x => x.Message).SequenceEqual(categories.Select(x => $"{x}を解析している。。")),
+            "turn growth uses the analysis message for each progressing category");
+        PersonalityRules.BeginTurn(passive, foe, 1, passiveLog, passive, foe);
+        Assert(passiveLog.Logs.Count == 6, "re-evaluating the same turn does not repeat progress");
+        PersonalityRules.BeginTurn(passive, foe, 2, passiveLog, passive, foe);
+        Assert(passiveLog.Logs.Skip(6).Select(x => x.Message).SequenceEqual(expectedMessages),
+            "simultaneous passive completions identify every completed category");
+        PersonalityRules.BeginTurn(passive, foe, 2, passiveLog, passive, foe);
+        PersonalityRules.BeginTurn(passive, foe, 3, passiveLog, passive, foe);
+        Assert(passiveLog.Logs.Count == 12, "same and later turns do not repeat completed status");
+        PersonalityRules.Reset(passive);
+        SetAllAdaptation(passive, 99);
+        PersonalityRules.BeginTurn(passive, foe, 1, passiveLog, passive, foe);
+        Assert(passiveLog.Logs.Count == 18, "new match can announce completion again");
+
+        PersonalityRules.Reset(passive);
+        passiveLog = new BattleLogger();
+        PersonalityRules.BeginTurn(passive, foe, 1, passiveLog, passive, foe);
+        Assert(passiveLog.Logs.Count == 0, "unexperienced categories neither grow nor emit progress");
+        passive.PhysicalAdaptation = 99;
+        passive.MagicAdaptation = 10;
+        PersonalityRules.BeginTurn(passive, foe, 2, passiveLog, passive, foe);
+        Assert(passiveLog.Logs.Select(x => x.Message).SequenceEqual(new[]
+            { expectedMessages[0], "魔法攻撃を解析している。。" }),
+            "completion and progress can coexist without reporting unchanged categories");
+
+        for (int scenario = 0; scenario < 4; scenario++)
+        {
+            var damageTarget = DamageTestMonster();
+            damageTarget.Name = "被弾対象";
+            var damageLog = new BattleLogger();
+            foe.Stats.Accuracy = 100;
+            damageTarget.Stats.Evasion = 0;
+            damageTarget.IsInvincible = scenario == 1;
+            if (scenario == 2) damageTarget.CurrentHp = 1;
+            Executor.Execute(foe, damageTarget,
+                new SkillData { SkillType = SkillType.NormalAttack, SuccessRate = scenario == 3 ? 0 : 100 },
+                damageLog, foe, damageTarget);
+            var progressLogs = damageLog.Logs.Where(x => x.Message.Contains("適応")).ToList();
+            Assert(scenario == 0
+                ? progressLogs.Count == 1 && progressLogs[0].Message == "物理攻撃の適応が始まった..."
+                    && progressLogs[0].RightHp == damageTarget.CurrentHp
+                : progressLogs.Count == 0,
+                "skill execution logs actual adaptation gains, excluding invincible, lethal and failed hits");
+        }
+
+        var target = DamageTestMonster();
+        target.Name = "全身全霊を耐えるスライム";
+        var allOutLog = new BattleLogger();
+        var actor = Monster();
+        Executor.Execute(actor, target, new SkillData { SkillType = SkillType.AllOutAttack, SuccessRate = 100 },
+            allOutLog, actor, target);
+        var notifications = allOutLog.Logs.Where(x => x.Message.Contains("適応")).ToList();
+        Assert(target.PhysicalAdaptation == 100 && target.MagicAdaptation == 100
+            && notifications.Select(x => x.Message).SequenceEqual(expectedMessages.Take(2)),
+            "all-out survival identifies physical and magic completion without numeric stats");
+        PersonalityRules.OnAttackHit(target, SkillType.AllOutAttack, ElementType.Fire, allOutLog, actor, target);
+        Assert(allOutLog.Logs.Count(x => x.Message.Contains("適応")) == 2, "all-out completion cannot repeat");
+
+        var stunTarget = DamageTestMonster();
+        stunTarget.Name = "スタン対象";
+        stunTarget.StunAdaptation = 50;
+        var failureLog = new BattleLogger();
+        Executor.Execute(foe, stunTarget, new SkillData { SkillType = SkillType.StunDebuff, SuccessRate = 0 },
+            failureLog, foe, stunTarget);
+        Assert(failureLog.Logs.Count == 1 && failureLog.Logs[0].Message == "しかし失敗した！",
+            "resisted skill failure does not reveal adaptation or success-rate stats");
     }
 
     private static void CheckAttackAdaptationDamage()
@@ -370,12 +838,15 @@ public static class PersonalityImplementationChecks
             int expected = adaptation == 100 ? 0 : Mathf.Max(1, Mathf.RoundToInt(baseDamage * (100 - adaptation) / 100f));
             Assert(1000 - adaptive.CurrentHp == expected, "damage reduction after critical and copy: " + type);
             Assert(PersonalityRules.GetSuccessRateReduction(adaptive, type) == 0, "attack adaptation never changes success rate");
-            int growth = isPhysical ? (type == SkillType.NormalAttack ? 5 : 10) : 20;
+            int growth = isPhysical ? (type == SkillType.NormalAttack ? 5 : 10)
+                : type == SkillType.WaterMagic ? 5 : type == SkillType.GrassMagic ? 20 : 10;
             int actualAdaptation = isPhysical ? adaptive.PhysicalAdaptation : adaptive.MagicAdaptation;
-            Assert(actualAdaptation == Mathf.Min(100, adaptation + (expected > 0 ? growth : 0)),
+            Assert(actualAdaptation == (type == SkillType.AllOutAttack && expected > 0 ? 100
+                : Mathf.Min(100, adaptation + (expected > 0 ? growth : 0))),
                 "adaptation grows only after positive damage");
-            Assert((isPhysical ? adaptive.MagicAdaptation : adaptive.PhysicalAdaptation) == 0,
-                "attack adaptation does not change the other category");
+            Assert((isPhysical ? adaptive.MagicAdaptation : adaptive.PhysicalAdaptation)
+                == (type == SkillType.AllOutAttack && expected > 0 ? 100 : 0),
+                "only surviving all-out damage also completes magic adaptation");
             Assert(adaptive.DamageTakenCount == (expected > 0 ? 1 : 0), "full resistance prevents damage events");
         }
 
@@ -392,7 +863,7 @@ public static class PersonalityImplementationChecks
         adaptive.MagicAdaptation = 20;
         SetNextSuccessRoll(.75f, .8f);
         Executor.Execute(foe, adaptive, MonsterFactory.CreateElementSkill(ElementType.Water), logger, foe, adaptive);
-        Assert(adaptive.CurrentHp < 100 && adaptive.MagicAdaptation == 40, "magic retains original success rate");
+        Assert(adaptive.CurrentHp < 100 && adaptive.MagicAdaptation == 25, "magic retains original success rate");
     }
 
     // 成功判定に使う次の乱数を範囲内に固定し、運で検証結果が変わることを防ぐ。
@@ -646,9 +1117,9 @@ public static class PersonalityImplementationChecks
             {
                 var stats = ranked.Stats;
                 Assert(stats.MaxHp >= 45 && stats.MaxHp <= 90 && stats.Attack >= 8 && stats.Attack <= 25
-                    && stats.Defense >= 8 && stats.Defense <= 25 && stats.Growth >= 5 && stats.Growth <= 30
-                    && stats.Speed >= 5 && stats.Speed <= 30 && stats.Accuracy >= 65 && stats.Accuracy <= 95
-                    && stats.Evasion >= 5 && stats.Evasion <= 25 && stats.CriticalRate >= 5 && stats.CriticalRate <= 20,
+                    && stats.Defense >= 8 && stats.Defense <= 25 && stats.Growth >= 5 && stats.Growth <= 100
+                    && stats.Speed >= 5 && stats.Speed <= 30 && stats.Accuracy >= 5 && stats.Accuracy <= 30
+                    && stats.Evasion >= 5 && stats.Evasion <= 30 && stats.CriticalRate >= 5 && stats.CriticalRate <= 20,
                     "normal starting stats for " + ranked.Personality);
             }
         }

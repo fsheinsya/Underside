@@ -46,6 +46,8 @@ public class SelectSceneController: MonoBehaviour
     {
         cts = new CancellationTokenSource();
 
+        AwakeExplantion();
+
         StoryBtnPos.anchoredPosition = new Vector2(-570f,50f);
         RankBtnPos.anchoredPosition = new Vector2(-570f,-80f);
         explanTxtPos.anchoredPosition = new Vector2(145f,60f);
@@ -64,7 +66,7 @@ public class SelectSceneController: MonoBehaviour
     //初期
     public void AwakeExplantion()
     {
-        explan.text = $"";
+        explan.text = $"モードを選択しよう！";
     }
 
     //ストーリーボタンに触れる

@@ -116,12 +116,33 @@ public static class FaithPrayerChecks
 
             var resistant = Monster(PersonalityType.Adaptive);
             resistant.PhysicalAdaptation = resistant.MagicAdaptation = 100;
+            resistant.ExplosionAdaptation = resistant.RecoilAdaptation = 100;
             Execute(seeds["damage 40"], Monster(), resistant);
             Assert(resistant.CurrentHp == 60 && resistant.PhysicalAdaptation == 100 && resistant.MagicAdaptation == 100,
                 "fixed damage ignores physical and magic resistance");
+            var punishedBaseline = Monster();
+            Execute(seeds["self damage"], punishedBaseline, Monster());
+            int punishmentDamage = 100 - punishedBaseline.CurrentHp;
+            foreach (int resistance in new[] { 0, 50, 100 })
+            {
+                var punished = Monster(PersonalityType.Adaptive);
+                punished.PhysicalAdaptation = punished.MagicAdaptation = punished.PoisonAdaptation = punished.StunAdaptation = resistance;
+                punished.ExplosionAdaptation = punished.RecoilAdaptation = resistance;
+                var punishmentLog = Execute(seeds["self damage"], punished, Monster());
+                Assert(100 - punished.CurrentHp == punishmentDamage, "punishment ignores every level of adaptation");
+                Assert(punished.PhysicalAdaptation == resistance && punished.MagicAdaptation == resistance
+                    && punished.PoisonAdaptation == resistance && punished.StunAdaptation == resistance
+                    && punished.ExplosionAdaptation == resistance && punished.RecoilAdaptation == resistance,
+                    "punishment never grants any adaptation");
+                Assert(!punishmentLog.Logs.Any(x => x.Message.Contains("の適応が") || x.Message.EndsWith("を解析している。。")),
+                    "punishment produces no adaptation message");
+                Execute(seeds["self death"], punished, Monster());
+                Assert(punished.CurrentHp == 0, "punishment instant death is also excluded");
+            }
             var stoic = Monster(PersonalityType.Stoic);
             Execute(seeds["damage 5"], Monster(), stoic);
-            Assert(stoic.DamageTakenCount == 1 && Mathf.Approximately(stoic.PersonalityMultiplier, 1.1f), "miracle triggers stoic growth");
+            Assert(stoic.DamageTakenCount == 1 && Mathf.Approximately(stoic.StoicStatMultiplier, 1.1f)
+                && stoic.PersonalityMultiplier == 1f && stoic.CurrentHp == 95 && stoic.GetCurrentMaxHp() == 100, "miracle triggers stoic growth");
 
             var sealedActor = Monster();
             sealedActor.IsSkillLocked = true;

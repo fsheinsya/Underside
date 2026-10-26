@@ -4,6 +4,9 @@ using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using DG.Tweening;
 using Cysharp.Threading.Tasks;
+using System;
+using System.Threading;
+using Random = UnityEngine.Random;
 
 /// <summary>
 /// Resultシーン全体を管理するクラス
@@ -35,6 +38,7 @@ public class ResultSceneController : MonoBehaviour
 
     //勝敗予想結果のデータを取得する
     private MatchResultData result;
+    private CancellationTokenSource animationCancellation;
 
     /// <summary>
     /// シーン開始時に呼ばれる
@@ -56,7 +60,8 @@ public class ResultSceneController : MonoBehaviour
         SetupResultView();
 
         // 勝敗演出を開始
-        PlayResultAnimation().Forget();
+        animationCancellation = CancellationTokenSource.CreateLinkedTokenSource(this.GetCancellationTokenOnDestroy());
+        PlayResultAnimation(animationCancellation.Token).Forget();
     }
 
     /// <summary>
@@ -120,9 +125,21 @@ public class ResultSceneController : MonoBehaviour
     /// <summary>
     /// 勝敗に応じた結果演出を流す
     /// </summary>
-    private async UniTask PlayResultAnimation()
+    private async UniTask PlayResultAnimation(CancellationToken cancellationToken)
     {
+        try
+        {
+            await PlayResultAnimationCore(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // 次の画面へ進む操作、または画面破棄での正常終了。
+        }
+    }
 
+    private async UniTask PlayResultAnimationCore(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
         // プレイヤーの予想が当たったかどうか
         bool isWin = IsPlayerWin(result);
 
@@ -149,7 +166,8 @@ public class ResultSceneController : MonoBehaviour
         // ---------------------------
         if (winnerImage != null)
         {
-            await winnerImage.DOFade(1f, 0.5f).AsyncWaitForCompletion();
+            await winnerImage.DOFade(1f, 0.5f).SetId(this).ToUniTask(
+                TweenCancelBehaviour.KillAndCancelAwait, cancellationToken: cancellationToken);
         }
 
         // ---------------------------
@@ -160,7 +178,8 @@ public class ResultSceneController : MonoBehaviour
             await winnerNameText.rectTransform
                 .DOAnchorPosX(-250f, 0.5f)
                 .SetEase(Ease.OutBack)
-                .AsyncWaitForCompletion();
+                .SetId(this)
+                .ToUniTask(TweenCancelBehaviour.KillAndCancelAwait, cancellationToken: cancellationToken);
         }
 
         // ---------------------------
@@ -178,12 +197,14 @@ public class ResultSceneController : MonoBehaviour
                 await boolingWinnerText.transform
                     .DOScale(1.5f, 0.3f)
                     .SetEase(Ease.OutBack)
-                    .AsyncWaitForCompletion();
+                    .SetId(this)
+                    .ToUniTask(TweenCancelBehaviour.KillAndCancelAwait, cancellationToken: cancellationToken);
 
                 await boolingWinnerText.transform
                     .DOScale(1f, 0.2f)
                     .SetEase(Ease.InOutQuad)
-                    .AsyncWaitForCompletion();
+                    .SetId(this)
+                    .ToUniTask(TweenCancelBehaviour.KillAndCancelAwait, cancellationToken: cancellationToken);
 
                 audio.PlayOneShot(WinSound);
                 
@@ -196,7 +217,8 @@ public class ResultSceneController : MonoBehaviour
                 await boolingWinnerText.transform
                     .DOScale(1f, 0.8f)
                     .SetEase(Ease.OutQuad)
-                    .AsyncWaitForCompletion();
+                    .SetId(this)
+                    .ToUniTask(TweenCancelBehaviour.KillAndCancelAwait, cancellationToken: cancellationToken);
 
                 audio.PlayOneShot(LoseSound);
             }
@@ -205,7 +227,7 @@ public class ResultSceneController : MonoBehaviour
         // ---------------------------
         // ④ コイン表示演出
         // ---------------------------
-        await AnimateCoin(result, isWin);
+        await AnimateCoin(result, isWin, cancellationToken);
         audio.PlayOneShot(CoinSound);
     }
 
@@ -213,8 +235,9 @@ public class ResultSceneController : MonoBehaviour
     /// コイン表示だけを演出する
     /// 実際のセッション値はここでは変更しない
     /// </summary>
-    private async UniTask AnimateCoin(MatchResultData result, bool isWin)
+    private async UniTask AnimateCoin(MatchResultData result, bool isWin, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         // BattleScene 側で CurrentCoin が最終値になっている前提
         int targetCoin = GameSession.Instance.CurrentCoin;
 
@@ -260,7 +283,7 @@ public class ResultSceneController : MonoBehaviour
             int fake = (int)System.Math.Min(max, min + System.Math.Floor(((double)max - min + 1) * Random.value));
             coinText.text = $"Coin\n{fake}";
 
-            await UniTask.Yield();
+            await UniTask.Yield(cancellationToken);
         }
 
         // 最終値へ滑らかに寄せる
@@ -273,7 +296,7 @@ public class ResultSceneController : MonoBehaviour
                 System.Math.Round(startCoin + ((double)targetCoin - startCoin) * Mathf.Clamp01(t)));
             coinText.text = $"Coin\n{value}";
 
-            await UniTask.Yield();
+            await UniTask.Yield(cancellationToken);
         }
 
         // 最終値で確定
@@ -304,6 +327,7 @@ public class ResultSceneController : MonoBehaviour
     {
         // 多重遷移防止
         isTransitioning = true;
+        CancelAnimation();
 
         var mode = GameSession.Instance.mode;
 
@@ -338,5 +362,22 @@ public class ResultSceneController : MonoBehaviour
         // 次ラウンドへ進めて次のBetへ
         GameSession.Instance.NextRound();
         SceneManager.LoadScene(SceneNames.Bet);
+    }
+
+    private void CancelAnimation()
+    {
+        if (animationCancellation == null || animationCancellation.IsCancellationRequested) return;
+        animationCancellation.Cancel(); // 待機中のTweenもKillAndCancelAwaitで停止する。
+        DOTween.Kill(this); // この画面が所有するTweenだけを即座に停止する。
+        if (audio != null) audio.Stop();
+    }
+
+    private void OnDisable() => CancelAnimation();
+
+    private void OnDestroy()
+    {
+        CancelAnimation();
+        animationCancellation?.Dispose();
+        animationCancellation = null;
     }
 }
