@@ -17,6 +17,7 @@ public static class BattleTurnEventChecks
         assertions = 0;
         try
         {
+            CheckEventBoundaryAndTurnCap();
             CheckPayoutDistribution();
             CheckIndependentEvents();
             CheckTurnLimits();
@@ -24,6 +25,108 @@ public static class BattleTurnEventChecks
             Debug.Log($"TURN_EVENT_CHECKS_PASSED: {assertions} assertions.");
         }
         finally { Random.state = previous; }
+    }
+
+    // 初めてCIを試すための入口。配当分布などの網羅検証とは別にターン境界だけを実行する。
+    [MenuItem("Tools/UnderSide/Check Turn 20 and 40 Boundaries")]
+    public static void RunBoundaries()
+    {
+        var previous = Random.state;
+        assertions = 0;
+        try
+        {
+            CheckEventBoundaryAndTurnCap();
+            Debug.Log($"TURN_BOUNDARY_CHECKS_PASSED: {assertions} assertions; 64 battles.");
+        }
+        finally { Random.state = previous; }
+    }
+
+    private static void CheckEventBoundaryAndTurnCap()
+    {
+        // 期待値を本体のStartTurn/MaxTurnsから取ると、誤った変更まで正解にしてしまう。
+        const int expectedStart = 20;
+        const int expectedLast = 40;
+        const string announcement = "決着の時が訪れた！おかしな出来事が始まろうとしている、、、";
+
+        foreach (var mode in new[] { ModeType.story, ModeType.ranking })
+        {
+            bool sawTurn20Event = false;
+            bool sawTurn21Event = false;
+            bool sawTurn40Event = false;
+            bool sawTurn20WithoutEvent = false;
+
+            // 同じseedで毎回再現できる実戦を実行する。イベントの必発化はしない。
+            for (int seed = 0; seed < 32; seed++)
+            {
+                Random.InitState(seed);
+                var left = Passive("境界テスト左");
+                var right = Passive("境界テスト右");
+                left.DebuffImmune = right.DebuffImmune = true;
+                var bet = new BetData { Amount = 10, PayoutMultiplier = 2, Side = PredictionSide.Left };
+                var result = new BattleSimulator().Simulate(left, right, bet, mode);
+                string context = $"mode={mode}, seed={seed}";
+
+                Assert(left.CurrentHp > 0 && right.CurrentHp > 0,
+                    $"boundary fixtures must survive all 40 turns ({context})");
+                Assert(result.BattleLogs.Where(log => log.Message.StartsWith("--- Turn "))
+                    .Select(log => log.Message)
+                    .SequenceEqual(Enumerable.Range(1, expectedLast).Select(turn => $"--- Turn {turn} ---")),
+                    $"battle must process turns 1..40 exactly once, with no turn 41 ({context})");
+
+                int currentTurn = 0;
+                int announcementCount = 0;
+                int turn20Events = 0;
+                int actionsThisTurn = 0;
+                bool eventAlreadyStarted = false;
+                foreach (var log in result.BattleLogs)
+                {
+                    if (log.Message.StartsWith("--- Turn "))
+                    {
+                        currentTurn++;
+                        actionsThisTurn = 0;
+                        eventAlreadyStarted = false;
+                    }
+                    if (log.IsAction)
+                    {
+                        Assert(!eventAlreadyStarted, $"actions must precede end-of-turn events ({context}, turn={currentTurn})");
+                        actionsThisTurn++;
+                    }
+                    if (log.Message == announcement)
+                    {
+                        announcementCount++;
+                        Assert(currentTurn == 21 && actionsThisTurn == 0,
+                            $"announcement must appear at the start of turn 21 ({context})");
+                    }
+                    if (!log.Message.Contains("イベント！")) continue;
+
+                    Assert(currentTurn >= expectedStart && currentTurn <= expectedLast,
+                        $"events must occur only on turns 20..40 ({context}, actual turn={currentTurn})");
+                    Assert(actionsThisTurn == 2,
+                        $"events must follow both surviving actors' actions ({context}, turn={currentTurn})");
+                    eventAlreadyStarted = true;
+                    if (currentTurn == 20) { sawTurn20Event = true; turn20Events++; }
+                    if (currentTurn == 21) sawTurn21Event = true;
+                    if (currentTurn == 40) sawTurn40Event = true;
+                }
+                Assert(announcementCount == 1, $"announcement must appear exactly once ({context})");
+                sawTurn20WithoutEvent |= turn20Events == 0;
+
+                if (mode == ModeType.story)
+                    Assert(result.IsKingdomRaidEnding && !result.IsPredictionSuccess
+                        && result.RewardCoin == 0 && result.WinnerName == null,
+                        $"story must end in a raid without a winner or payout after turn 40 ({context})");
+                else
+                    Assert(!result.IsKingdomRaidEnding
+                        && result.BattleLogs.Any(log => log.Message.StartsWith("40ターン経過：")),
+                        $"ranking must adjudicate the battle after turn 40 ({context})");
+            }
+
+            Assert(sawTurn20Event, $"events must be reachable on turn 20 ({mode})");
+            Assert(sawTurn21Event, $"events must remain reachable on turn 21 ({mode})");
+            Assert(sawTurn40Event, $"events must still be processed on the final turn 40 ({mode})");
+            Assert(sawTurn20WithoutEvent, $"events are random, not guaranteed on turn 20 ({mode})");
+            Debug.Log($"TURN_BOUNDARY_CASE_PASSED: {mode}; no events before 20; events on 20/21/40; announcement on 21; stops at 40; no turn 41.");
+        }
     }
 
     private static void Assert(bool condition, string message)

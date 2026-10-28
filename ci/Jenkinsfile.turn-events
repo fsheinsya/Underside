@@ -1,0 +1,30 @@
+// Local trial: tests the current UnderSide folder on this Windows PC.
+// Paste this into the existing job's Pipeline script; no Git checkout is required yet.
+pipeline {
+    agent any
+
+    options {
+        skipDefaultCheckout()
+        disableConcurrentBuilds()
+        timeout(time: 15, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+    }
+
+    stages {
+        stage('Test turn 20 and 40 boundaries') {
+            steps {
+                bat '''@echo off
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:/User/Unity/UnderSide/ci/Test-TurnEvents.ps1" -LogPath "%WORKSPACE%/TestResults/turn-event-boundaries.log"
+exit /b %ERRORLEVEL%
+'''
+            }
+        }
+    }
+
+    post {
+        always {
+            archiveArtifacts artifacts: 'TestResults/turn-event-boundaries.log',
+                             allowEmptyArchive: true
+        }
+    }
+}
